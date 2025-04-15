@@ -13,6 +13,11 @@ namespace SteganoTool
     {
         private const int MaxIterations = 300;
         private const double Zoom = 1.5;
+        private const double EscapeRadius = 4.0;
+        private const double ColorOffset = 240.0;
+        private const double SaturationBase = 0.8;
+        private const double SaturationRange = 0.2;
+        private const double ValueMultiplier = 1.5;
 
         internal static Bitmap GenerateJulia(ProcessKey fullKey, int width, int height, string encryptedText)
         {
@@ -21,51 +26,40 @@ namespace SteganoTool
             var allBits = lengthBits.Concat(messageBits).ToArray();
 
             var bmp = new Bitmap(width, height);
-            var bitIndex = 0;
+
+            BitmapData bmpData = bmp.LockBits(new Rectangle(0, 0, width, height), ImageLockMode.ReadWrite,
+                PixelFormat.Format32bppArgb);
 
             double scaleX = Zoom * 2.0 / width;
             double scaleY = Zoom * 2.0 / height;
 
-            for (int i = 0; i < 32; i++)
+            Parallel.For(0, height, y =>
             {
-                int x = i % width;
-                int y = i / width;
+                var row = new byte[width * 4];
 
-                var point = new Complex(
-                    (x - width / 2) * scaleX,
-                    (y - height / 2) * scaleY
-                );
-
-                var iterations = CalculateJuliaPoint(point, new Complex(fullKey.RealC, fullKey.ImaginaryC));
-                var color = GetColor(iterations);
-
-                color = EmbedBit(color, lengthBits[i]);
-                bmp.SetPixel(x, y, color);
-            }
-
-            var remainingBits = allBits.Skip(32).ToArray();
-            Parallel.For(32, width * height, i =>
-            {
-                if (i - 32 >= remainingBits.Length) return;
-
-                int x = i % width;
-                int y = i / width;
-
-                var point = new Complex(
-                    (x - width / 2) * scaleX,
-                    (y - height / 2) * scaleY
-                );
-
-                var iterations = CalculateJuliaPoint(point, new Complex(fullKey.RealC, fullKey.ImaginaryC));
-                var color = GetColor(iterations);
-                color = EmbedBit(color, remainingBits[i - 32]);
-
-                lock (bmp)
+                for (int x = 0; x < width; x++)
                 {
-                    bmp.SetPixel(x, y, color);
+                    var point = new Complex(
+                        (x - width / 2) * scaleX,
+                        (y - height / 2) * scaleY
+                    );
+
+                    var (iterations, magnitude) = CalculateJuliaPoint(point, new Complex(fullKey.RealC, fullKey.ImaginaryC));
+                    var color = GetColor(iterations, magnitude);
+
+                    int pixelIndex = y * width + x;
+                    int offset = x * 4;
+
+                    row[offset] = color.B;
+                    row[offset + 1] = color.G;
+                    row[offset + 2] = pixelIndex < allBits.Length ? EmbedBit(color.R, allBits[pixelIndex]) : color.R;
+                    row[offset + 3] = color.A;
                 }
+
+                Marshal.Copy(row, 0, IntPtr.Add(bmpData.Scan0, y * bmpData.Stride), row.Length);
             });
 
+            bmp.UnlockBits(bmpData);
             return bmp;
         }
 
@@ -74,6 +68,12 @@ namespace SteganoTool
             var width = bmp.Width;
             var height = bmp.Height;
             var bits = new List<bool>();
+
+            BitmapData bmpData = bmp.LockBits(new Rectangle(0, 0, width, height), ImageLockMode.ReadOnly,
+                PixelFormat.Format32bppArgb);
+
+            var lengthBits = new bool[32];
+            var row = new byte[bmpData.Stride];
 
             for (int i = 0; i < 32; i++)
             {
@@ -85,28 +85,24 @@ namespace SteganoTool
                     throw new ArgumentException($"Image is too small to decode message: {width}x{height}");
                 }
 
-                var color = bmp.GetPixel(x, y);
-                bool bit = ExtractBit(color);
-                bits.Add(bit);
+                if (x == 0)
+                {
+                    Marshal.Copy(IntPtr.Add(bmpData.Scan0, y * bmpData.Stride), row, 0, bmpData.Stride);
+                }
 
-                MessageBox.Show($"position ({x}, {y}): R={color.R}, bit={bit}");
+                lengthBits[i] = ExtractBit(row[x * 4 + 2]);
             }
 
-            MessageBox.Show("length bits read: " + string.Join("", bits.Take(32).Select(b => b ? "1" : "0")));
-
-            var lengthBits = bits.ToArray();
             var length = BitsToInt(lengthBits);
-            MessageBox.Show($"length: {length}");
 
             if (length < 0 || length > (width * height - 32) / 8)
             {
                throw new InvalidOperationException($"Invalid length of message: {length} must be between 0 and {(width * height - 32) / 8} ");
             }
 
-            bits.Clear();
-            int totalBitsNeeded = length * 8;
+            var messageBits = new bool[length * 8];
 
-            for (int i = 32; i < totalBitsNeeded; i++)
+            for (int i = 0; i < length * 8; i++)
             {
                 int pos = i + 32;
                 int x = pos % width;
@@ -117,31 +113,31 @@ namespace SteganoTool
                     throw new ArgumentException("image data is truncated");
                 }
 
-                var color = bmp.GetPixel(x, y);
-                bits.Add(ExtractBit(color));
+                if (x == 0)
+                {
+                    Marshal.Copy(IntPtr.Add(bmpData.Scan0, y * bmpData.Stride), row, 0, bmpData.Stride);
+                }
+
+                messageBits[i] = ExtractBit(row[x * 4 + 2]);
             }
 
 
-            if (bits.Count != length * 8)
-            {
-                throw new InvalidOperationException($"Not enough bits to decode message: {bits.Count} < {length * 8}");
-            }
 
             try
             {
+                var encryptedText = BitsToText(bits.ToArray());
                 var testDecode = Convert.FromBase64String(BitsToText(bits.ToArray()));
+                return encryptedText;
             }
             catch (Exception ex)
             {
                 throw new InvalidOperationException($"Failed to decode message: {ex.Message}");
             }
 
-            var encryptedText = BitsToText(bits.ToArray());
 
-            return encryptedText;
         }
 
-        private static int CalculateJuliaPoint(Complex z, Complex c)
+        private static (int, double) CalculateJuliaPoint(Complex z, Complex c)
         {
             int iterations = 0;
             double zReal = z.Real;
@@ -154,7 +150,7 @@ namespace SteganoTool
                 double r2 = zReal * zReal;
                 double i2 = zImag * zImag;
 
-                if (r2 + i2 > 4.0)
+                if (r2 + i2 > EscapeRadius)
                     break;
 
                 zImag = 2.0 * zReal * zImag + cImag;
@@ -163,21 +159,23 @@ namespace SteganoTool
                 iterations++;
             }
 
-            return iterations;
+            var magnitude = Math.Sqrt(zReal * zReal + zImag * zImag);
+
+            return (iterations, magnitude);
         }
 
-        private static Color GetColor(int iterations)
+        private static Color GetColor(int iterations, double magnitude)
         {
             if (iterations == MaxIterations)
                 return Color.Black;
 
-            double smoothed = iterations + 1 - Math.Log(Math.Log(2.0)) / Math.Log(2.0);
+            double smoothed = iterations + 1 - Math.Log(Math.Log(magnitude)) / Math.Log(2.0);
             smoothed = smoothed / MaxIterations;
 
             return ColorFromHSV(
-                (smoothed * 360) % 360,
-                0.8,
-                iterations < MaxIterations ? Math.Min(1.0, smoothed * 1.5) : 0
+                (smoothed * 360 + ColorOffset) % 360,
+                SaturationBase + smoothed * SaturationRange,
+                iterations < MaxIterations ? Math.Min(1.0, smoothed * ValueMultiplier) : 0
             );
         }
 
@@ -187,35 +185,50 @@ namespace SteganoTool
             saturation = Math.Clamp(saturation, 0, 1);
             value = Math.Clamp(value, 0, 1);
 
-            int hi = Convert.ToInt32(Math.Floor(hue / 60)) % 6;
-            double f = hue / 60 - Math.Floor(hue / 60);
+            double c = value * saturation;
+            double x = c * (1 - Math.Abs((hue / 60) % 2 - 1));
+            double m = value - c;
 
-            value = value * 255;
-            double v = value;
-            double p = value * (1 - saturation);
-            double q = value * (1 - f * saturation);
-            double t = value * (1 - (1 - f) * saturation);
+            double r, g, b;
 
-            switch (hi)
+            switch (hue)
             {
-                case 0: return Color.FromArgb((int)v, (int)t, (int)p);
-                case 1: return Color.FromArgb((int)q, (int)v, (int)p);
-                case 2: return Color.FromArgb((int)p, (int)v, (int)t);
-                case 3: return Color.FromArgb((int)p, (int)q, (int)v);
-                case 4: return Color.FromArgb((int)t, (int)p, (int)v);
-                default: return Color.FromArgb((int)v, (int)p, (int)q);
+                case < 60:
+                    r = c; g = x; b = 0;
+                    break;
+                case < 120:
+                    r = x; g = c; b = 0;
+                    break;
+                case < 180:
+                    r = 0; g = c; b = x;
+                    break;
+                case < 240:
+                    r = 0; g = x; b = c;
+                    break;
+                case < 300:
+                    r = x; g = 0; b = c;
+                    break;
+                default:
+                    r = c; g = 0; b = x;
+                    break;
             }
+
+            return Color.FromArgb(
+                255,
+                (int)((r + m) * 255),
+                (int)((g + m) * 255),
+                (int)((b + m) * 255)
+            );
         }
 
-        private static Color EmbedBit(Color color, bool bit)
+        private static byte EmbedBit(byte value, bool bit)
         {
-            int r = bit ? (color.R | 1) : (color.R & ~1);
-            return Color.FromArgb(color.A, r, color.G, color.B);
+            return bit ? (byte)(value | 1) : (byte)(value & ~1);
         }
 
-        private static bool ExtractBit(Color color)
+        private static bool ExtractBit(byte value)
         {
-            return (color.R & 1) == 1;
+            return (value & 1) == 1;
         }
 
         public static int BitsToInt(bool[] bits)
