@@ -12,7 +12,7 @@ namespace SteganoTool
 
         private const int ParameterCount = 3;
 
-        private const int MinPatternSize = 32;
+        private const int MinPatternSize = 160;
 
         internal static (int width, int height) CalculateMinimumSize(string text)
         {

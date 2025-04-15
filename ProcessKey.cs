@@ -13,7 +13,7 @@ namespace SteganoTool
         internal double RealC { get; set; }
         internal double ImaginaryC { get; set; }
         internal int Seed { get; set; }
-        internal static readonly Complex C = new Complex(-0.4, 0.6);
+        internal static readonly Complex C = new Complex(-0.7, 0.27015);
 
         internal static (ProcessKey, string) Generate(string text)
         {
@@ -46,7 +46,7 @@ namespace SteganoTool
         private static string EncryptText(string text, string key)
         {
             using var aes = Aes.Create();
-            aes.Key = Encoding.UTF8.GetBytes(key);
+            aes.Key = Convert.FromBase64String(key);
             aes.GenerateIV();
 
             using var encryptor = aes.CreateEncryptor();
@@ -62,16 +62,17 @@ namespace SteganoTool
             return encryptedText;
         }
 
-        private static string DecryptText(string encryptedText, string key)
+        internal static string DecryptText(string encryptedText, string key)
         {
             var fullCipher = Convert.FromBase64String(encryptedText);
 
             using var aes = Aes.Create();
-            var iv = new byte[aes.IV.Length];
-            var cipher = new byte[fullCipher.Length - iv.Length];
+            var iv = new byte[16];
+            int cipherLength = fullCipher.Length - iv.Length;
+            var cipher = new byte[cipherLength];
 
             Buffer.BlockCopy(fullCipher, 0, iv, 0, iv.Length);
-            Buffer.BlockCopy(fullCipher, iv.Length, cipher, 0, cipher.Length);
+            Buffer.BlockCopy(fullCipher, iv.Length, cipher, 0, cipherLength);
 
             aes.Key = Convert.FromBase64String(key);
             aes.IV = iv;

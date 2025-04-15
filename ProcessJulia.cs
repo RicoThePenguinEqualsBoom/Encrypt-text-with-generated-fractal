@@ -11,7 +11,7 @@ namespace SteganoTool
 {
     internal class ProcessJulia
     {
-        private const int MaxIterations = 1000000;
+        private const int MaxIterations = 300;
         private const double Zoom = 1.5;
 
         internal static Bitmap GenerateJulia(ProcessKey fullKey, int width, int height, string encryptedText)
@@ -20,39 +20,93 @@ namespace SteganoTool
             var bmp = new Bitmap(width, height);
             var bitIndex = 0;
 
-            for (int x = 0; x < width; x++)
+            double scaleX = Zoom * 2.0 / width;
+            double scaleY = Zoom * 2.0 / height;
+
+            Parallel.For(0, width, x =>
             {
                 for (int y = 0; y < height; y++)
                 {
                     var point = new Complex(
-                        (x - width / 2.0) / (width / 2.0) * Zoom,
-                        (y - height / 2.0) / (height / 2.0) * Zoom
+                        (x - width / 2) * scaleX,
+                        (y - height / 2) * scaleY
                     );
 
-                    var modifiedC = new Complex(fullKey.RealC, fullKey.ImaginaryC);
-
-                    var iterations = CalculateJuliaPoint(point, modifiedC);
+                    var iterations = CalculateJuliaPoint(point, new Complex(fullKey.RealC, fullKey.ImaginaryC));
                     var color = GetColor(iterations);
 
-                    if (bitIndex < bits.Length)
+                    lock (bmp)
                     {
-                        color = EmbedBit(color, bits[bitIndex]);
-                        bitIndex++;
+                        if (bitIndex < bits.Length)
+                        {
+                            color = EmbedBit(color, bits[bitIndex]);
+                            bitIndex++;
+                        }
+                        bmp.SetPixel(x, y, color);
                     }
+                }
+            });
 
-                    bmp.SetPixel(x, y, color);
+            return bmp;
+        }
+
+        internal static string DecodeJulia(Bitmap bmp)
+        {
+            var width = bmp.Width;
+            var height = bmp.Height;
+            var bits = new List<bool>();
+            var messageLength = 0;
+
+            for (int x = 0; x < width && messageLength < 32; x++)
+            {
+                for (int y = 0; y < height && messageLength < 32; y++)
+                {
+                    var color = bmp.GetPixel(x, y);
+                    bits.Add(ExtractBit(color));
+                    messageLength++;
                 }
             }
 
-            return bmp;
+            var lengthBits = bits.Take(32).ToArray();
+            var length = BitsToInt(lengthBits);
+            bits.Clear();
+
+            for (int x = 0; x < width; x++)
+            {
+                for (int y = 0; y < height; y++)
+                {
+                    if (x * height + y < 32) continue;
+                    if (bits.Count >= length * 8) break;
+
+                    var color = bmp.GetPixel(x, y);
+                    bits.Add(ExtractBit(color));
+                }
+            }
+
+            var encryptedText = BitsToText(bits.ToArray());
+
+            return encryptedText;
         }
 
         private static int CalculateJuliaPoint(Complex z, Complex c)
         {
             int iterations = 0;
-            while (iterations < MaxIterations && z.Magnitude < 2)
+            double zReal = z.Real;
+            double zImag = z.Imaginary;
+            double cReal = c.Real;
+            double cImag = c.Imaginary;
+
+            while (iterations < MaxIterations)
             {
-                z = z * z + c;
+                double r2 = zReal * zReal;
+                double i2 = zImag * zImag;
+
+                if (r2 + i2 > 4.0)
+                    break;
+
+                zImag = 2.0 * zReal * zImag + cImag;
+                zReal = r2 - i2 + cReal;
+
                 iterations++;
             }
 
@@ -64,12 +118,22 @@ namespace SteganoTool
             if (iterations == MaxIterations)
                 return Color.Black;
 
-            var hue = (float)iterations / MaxIterations;
-            return ColorFromHSV(hue * 360, 1, iterations < MaxIterations ? 1 : 0);
+            double smoothed = iterations + 1 - Math.Log(Math.Log(2.0)) / Math.Log(2.0);
+            smoothed = smoothed / MaxIterations;
+
+            return ColorFromHSV(
+                (smoothed * 360) % 360,
+                0.8,
+                iterations < MaxIterations ? Math.Min(1.0, smoothed * 1.5) : 0
+            );
         }
 
         private static Color ColorFromHSV(double hue, double saturation, double value)
         {
+            hue = Math.Clamp(hue, 0, 360);
+            saturation = Math.Clamp(saturation, 0, 1);
+            value = Math.Clamp(value, 0, 1);
+
             int hi = Convert.ToInt32(Math.Floor(hue / 60)) % 6;
             double f = hue / 60 - Math.Floor(hue / 60);
 
@@ -130,44 +194,6 @@ namespace SteganoTool
             }
 
             return Encoding.UTF8.GetString(bytes);
-        }
-
-        internal static string DecodeText(Bitmap bmp, ProcessKey fullKey)
-        {
-            var width = bmp.Width;
-            var height = bmp.Height;
-            var bits = new List<bool>();
-            var messageLength = 0;
-
-            for (int x = 0; x < width && messageLength < 32; x++)
-            {
-                for (int y = 0; y < height && messageLength < 32; y++)
-                {
-                    var color = bmp.GetPixel(x, y);
-                    bits.Add(ExtractBit(color));
-                    messageLength++;
-                }    
-            }
-
-            var lengthBits = bits.Take(32).ToArray();
-            var length = BitsToInt(lengthBits);
-            bits.Clear();
-
-            for (int x = 0; x < width; x++)
-            { 
-                for (int y = 0; y < height; y++)
-                {
-                    if (x * height + y < 32) continue;
-                    if (bits.Count >= length * 8) break;
-
-                    var color = bmp.GetPixel(x, y);
-                    bits.Add(ExtractBit(color));
-                }
-            }
-
-            var encryptedText = BitsToText(bits.ToArray());
-
-            return encryptedText;
         }
     }
 }

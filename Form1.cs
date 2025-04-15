@@ -33,7 +33,7 @@ namespace SteganoTool
         private string inText;
         private string outText;
         private string inKey;
-        private string keyString;
+        private string encryptedText;
 
         private Bitmap inputBmp;
         private Bitmap outputBmp;
@@ -87,28 +87,33 @@ namespace SteganoTool
 
         private void encrypt()
         {
-            try
-            {
+                inText = inputText.Text;
+                height = int.Parse(ImageH.Text);
+                width = int.Parse(ImageW.Text);
 
-            }
-            catch (Exception error)
-            {
-                MessageBox.Show(error.Message);
-                return;
-            }
+                (outKey, encryptedText) = ProcessKey.Generate(inText);
+
+                outputBmp = ProcessJulia.GenerateJulia(outKey, width, height, encryptedText);
+
+                outputImage.Image = outputBmp;
+                outputKey.Text = outKey.Key;
         }
 
         private void decrypt()
         {
-            try
-            {
+                inKey = encryptKey.Text;
 
-            }
-            catch (Exception error)
-            {
-                MessageBox.Show(error.Message);
-                return;
-            }
+                encryptedText = ProcessJulia.DecodeJulia(inputBmp);
+
+                outText = ProcessKey.DecryptText(encryptedText, inKey);
+
+                if (outText == null)
+                {
+                    MessageBox.Show("La clé est incorrecte ou l'image ne contient pas de message caché.");
+                    return;
+                }
+
+                outputText.Text = outText;
         }
 
         private void inputText_TextChanged(object sender, EventArgs e)
