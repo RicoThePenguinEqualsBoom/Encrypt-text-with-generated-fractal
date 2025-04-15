@@ -68,11 +68,10 @@ namespace SteganoTool
 
             using var aes = Aes.Create();
             var iv = new byte[aes.IV.Length];
-            int cipherLength = fullCipher.Length - iv.Length;
-            var cipher = new byte[cipherLength];
+            var cipher = new byte[fullCipher.Length - iv.Length];
 
             Buffer.BlockCopy(fullCipher, 0, iv, 0, iv.Length);
-            Buffer.BlockCopy(fullCipher, iv.Length, cipher, 0, cipherLength);
+            Buffer.BlockCopy(fullCipher, iv.Length, cipher, 0, cipher.Length);
 
             aes.Key = Convert.FromBase64String(key);
             aes.IV = iv;
@@ -85,34 +84,27 @@ namespace SteganoTool
             return decryptedText;
         }
 
-        internal static bool[] TextToBits(string text)
+        internal static (bool[], bool[]) TextToBits(string text)
         {
-            var bytes = Encoding.UTF8.GetBytes(text);
-            var bits = new bool[bytes.Length * 8 + 32];
+            var bytes = Convert.FromBase64String(text);
+            int messageLength = bytes.Length;
 
-            var lengthBits = IntToBits(bytes.Length);
-            Array.Copy(lengthBits, bits, 32);
+            bool[] lengthBits = new bool[32];
+            for (int i = 0; i < 32; i++)
+            {
+                lengthBits[31 - i] = ((messageLength >> i) & 1) == 1;
+            }
 
-            for (int i = 0; i < bytes.Length; i++)
+            var messageBits = new bool[messageLength * 8];
+            for (int i = 0; i < messageLength; i++)
             {
                 for (int j = 0; j < 8; j++)
                 {
-                    bits[32 + (i * 8) + j] = ((bytes[i] >> (7 - j)) & 1) == 1;
+                    messageBits[i * 8 + j] = ((bytes[i] >> (7 - j)) & 1) == 1;
                 }
             }
 
-            return bits;
-        }
-
-        private static bool[] IntToBits(int value)
-        {
-            var bits = new bool[32];
-            for (int i = 0; i < 32; i++)
-            {
-                bits[i] = ((value >> (31 - i)) & 1) == 1;
-            }
-
-            return bits;
+            return (lengthBits, messageBits);
         }
     }
 }
