@@ -2,107 +2,116 @@
 using System.Collections.Generic;
 using System.Numerics;
 using System.Security.Cryptography;
+using System.Security.Cryptography.Xml;
 using System.Text;
 
 namespace SteganoTool
 {
-    internal class ProcessKey : IDisposable
+    internal class ProcessKey
     {
-        private const int DefaultMaxIterations = 1000;
+        internal string Key { get; set; }
+        internal double RealC { get; set; }
+        internal double ImaginaryC { get; set; }
+        internal int Seed { get; set; }
+        internal static readonly Complex C = new Complex(-0.4, 0.6);
 
-        internal Complex C { get; set; }
-        internal required byte[] Salt { get; set; }
-        internal int Iterations { get; set; }
-        internal int TextLength { get; set; }
-
-        /** internal static string Generate(int cryptL)
-         {
-             var initial = new Random(cryptL);
-
-             int keyStarter = initial.Next(1, 50000000) + RandomNumberGenerator.GetInt32(20000000);
-
-             var keyGenerator = new Random(keyStarter);
-
-             double keyPart1 = keyGenerator.NextDouble();
-             double keyPart2 = keyGenerator.NextDouble();
-
-             string key = keyPart1 + "+" + keyPart2;
-
-             return key;
-         }**/
-
-        public override string ToString()
+        internal static (ProcessKey, string) Generate(string text)
         {
-            return $"{C.Real}:{C.Imaginary}:{Convert.ToBase64String(Salt)}:{Iterations}:{TextLength}";
-        }
+            using var rng = RandomNumberGenerator.Create();
+            var keyBytes = new byte[32];
+            rng.GetBytes(keyBytes);
+            var key = Convert.ToBase64String(keyBytes);
 
-        internal static ProcessKey FromString(string keyString)
-        {
-            var parts = keyString.Split(':');
-            return new ProcessKey
+            var seed = new Random().Next();
+            var random = new Random(seed);
+
+            var modifiedC = new Complex(
+                C.Real + (random.NextDouble() * 0.01 - 0.005),
+                C.Imaginary + (random.NextDouble() * 0.01 - 0.005)
+            );
+
+            var fullKey = new ProcessKey
             {
-                C = new Complex(double.Parse(parts[0]), double.Parse(parts[1])),
-                Salt = Convert.FromBase64String(parts[2]),
-                Iterations = int.Parse(parts[3]),
-                TextLength = int.Parse(parts[4])
+                Key = key,
+                RealC = modifiedC.Real,
+                ImaginaryC = modifiedC.Imaginary,
+                Seed = seed
             };
+
+            var encryptedText = EncryptText(text, key);
+
+            return (fullKey, encryptedText);
         }
 
-
-        internal static ProcessKey Generate(string text)
+        private static string EncryptText(string text, string key)
         {
-            byte[] salt = new byte[16];
-            using (var rng = RandomNumberGenerator.Create())
-            {
-                rng.GetBytes(salt);
-            }
+            using var aes = Aes.Create();
+            aes.Key = Encoding.UTF8.GetBytes(key);
+            aes.GenerateIV();
 
-            byte[] textBytes = Encoding.UTF8.GetBytes(text);
-            using var sha256 = SHA256.Create();
-            byte[] combinedBytes = new byte[salt.Length + textBytes.Length];
-            Buffer.BlockCopy(salt, 0, combinedBytes, 0, salt.Length);
-            Buffer.BlockCopy(textBytes, 0, combinedBytes, salt.Length, textBytes.Length);
-            byte[] hash = sha256.ComputeHash(combinedBytes);
+            using var encryptor = aes.CreateEncryptor();
+            var plainBytes = Encoding.UTF8.GetBytes(text);
+            var cipherBytes = encryptor.TransformFinalBlock(plainBytes, 0, plainBytes.Length);
 
-            double real = (BitConverter.ToDouble(hash, 0) % 2.0) - 1.0;
-            double imaginary = (BitConverter.ToDouble(hash, 8) % 2.0) - 1.0;
-            int iterations = DefaultMaxIterations + (BitConverter.ToInt32(hash, 16) % 500);
-            int textLength = text.Length;
+            var result = new byte[aes.IV.Length + cipherBytes.Length];
+            Buffer.BlockCopy(aes.IV, 0, result, 0, aes.IV.Length);
+            Buffer.BlockCopy(cipherBytes, 0, result, aes.IV.Length, cipherBytes.Length);
 
-            Complex c = new(real, imaginary);
-            var key = new ProcessKey { C = c, Salt = salt, Iterations = iterations, TextLength = textLength };
+            string encryptedText = Convert.ToBase64String(result);
 
-            MessageBox.Show(Decrypt(key));
-
-            return key;
+            return encryptedText;
         }
 
-        internal static string Decrypt(ProcessKey key)
+        private static string DecryptText(string encryptedText, string key)
         {
-            using var sha256 = SHA256.Create();
-            byte[] reconstructedHash = ReconstructHash(key.C, key.Iterations);
+            var fullCipher = Convert.FromBase64String(encryptedText);
 
-            byte[] combinedBytes = new byte[key.Salt.Length + key.TextLength];
-            Buffer.BlockCopy(key.Salt, 0, combinedBytes, 0, key.Salt.Length);
-            Buffer.BlockCopy(reconstructedHash, 0, combinedBytes, key.Salt.Length, key.TextLength);
+            using var aes = Aes.Create();
+            var iv = new byte[aes.IV.Length];
+            var cipher = new byte[fullCipher.Length - iv.Length];
 
-            string decryptedText = Encoding.UTF8.GetString(combinedBytes, key.Salt.Length, key.TextLength);
+            Buffer.BlockCopy(fullCipher, 0, iv, 0, iv.Length);
+            Buffer.BlockCopy(fullCipher, iv.Length, cipher, 0, cipher.Length);
+
+            aes.Key = Convert.FromBase64String(key);
+            aes.IV = iv;
+
+            using var decryptor = aes.CreateDecryptor();
+            var plainBytes = decryptor.TransformFinalBlock(cipher, 0, cipher.Length);
+
+            var decryptedText = Encoding.UTF8.GetString(plainBytes);
 
             return decryptedText;
         }
 
-        private static byte[] ReconstructHash(Complex c, int iterations)
+        internal static bool[] TextToBits(string text)
         {
-            byte[] hash = new byte[32];
-            Buffer.BlockCopy(BitConverter.GetBytes(c.Real), 0, hash, 0, 8);
-            Buffer.BlockCopy(BitConverter.GetBytes(c.Imaginary), 0, hash, 8, 8);
-            Buffer.BlockCopy(BitConverter.GetBytes(iterations), 0, hash, 16, 4);
-            return hash;
+            var bytes = Encoding.UTF8.GetBytes(text);
+            var bits = new bool[bytes.Length * 8 + 32];
+
+            var lengthBits = IntToBits(bytes.Length);
+            Array.Copy(lengthBits, bits, 32);
+
+            for (int i = 0; i < bytes.Length; i++)
+            {
+                for (int j = 0; j < 8; j++)
+                {
+                    bits[32 + (i * 8) + j] = ((bytes[i] >> (7 - j)) & 1) == 1;
+                }
+            }
+
+            return bits;
         }
 
-        public void Dispose()
+        private static bool[] IntToBits(int value)
         {
-            GC.SuppressFinalize(this);
+            var bits = new bool[32];
+            for (int i = 0; i < 32; i++)
+            {
+                bits[i] = ((value >> (31 - i)) & 1) == 1;
+            }
+
+            return bits;
         }
     }
 }

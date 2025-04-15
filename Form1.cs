@@ -89,24 +89,7 @@ namespace SteganoTool
         {
             try
             {
-                /* inText = inputText.Text;
 
-                 cryptL = trackBar1.Value;
-
-                 int.TryParse(ImageH.Text, out height);
-                 int.TryParse(ImageW.Text, out width); */
-
-                inText = inputText.Text;
-                width = int.Parse(ImageW.Text);
-                height = int.Parse(ImageH.Text);
-
-                outKey = ProcessKey.Generate(inText);
-                keyString = outKey.ToString();
-
-                outputBmp = ProcessJulia.GenerateJulia(width, height, outKey);
-
-                outputKey.Text = keyString;
-                outputImage.Image = outputBmp;
             }
             catch (Exception error)
             {
@@ -119,11 +102,7 @@ namespace SteganoTool
         {
             try
             {
-                inKey = encryptKey.Text;
 
-                outText = ProcessJulia.DecryptFractal(inputBmp, inKey);
-
-                outputText.Text = outText;
             }
             catch (Exception error)
             {

@@ -4,227 +4,170 @@ using System.Runtime.InteropServices;
 using System.Numerics;
 using System.Threading.Tasks;
 using System.Drawing;
+using System.CodeDom.Compiler;
+using System.Text;
 
 namespace SteganoTool
 {
-    internal class ProcessJulia : IDisposable
+    internal class ProcessJulia
     {
-        private const double DefaultEscapeRadius = 2.0;
-        private readonly Color[] colorPalette;
+        private const int MaxIterations = 1000000;
+        private const double Zoom = 1.5;
 
-        /** internal static (Bitmap, string) Encrypt(int height, int width, int cryptL, string text)
-         {
-             string key = ProcessKey.Generate(cryptL);
-
-             var keyParts = key.Split(new[] { '+' }, StringSplitOptions.RemoveEmptyEntries);
-             double keyPart1 = double.Parse(keyParts[0]);
-             double keyPart2 = double.Parse(keyParts[1]);
-
-             Complex c = TextToComplex(text);
-
-             Bitmap e = new Bitmap(width, height);
-
-             return (e, key);
-         }
-
-         internal static Complex TextToComplex(string text)
-         {
-             double real = 0;
-             double imaginary = 0;
-
-             foreach (char c in text)
-             {
-                 real += c;
-                 imaginary += c * 0.1;
-             }
-
-             real = (real % 2) - 1;
-             imaginary = (imaginary % 2) - 1;
-
-             return new Complex(real, imaginary);
-         }**/
-
-        internal ProcessJulia()
+        internal static Bitmap GenerateJulia(ProcessKey fullKey, int width, int height, string encryptedText)
         {
-            colorPalette = new Color[256];
-            for (int i = 0; i < 256; i++)
-            {
-                double t = i / 255.0;
-                int r = (int)(255 * Math.Pow(t, 0.5));
-                int g = (int)(255 * Math.Pow(t, 0.7));
-                int b = (int)(255 * Math.Pow(t, 0.3));
-                colorPalette[i] = Color.FromArgb(255, r, g, b);
-            }
-        }
+            var bits = ProcessKey.TextToBits(encryptedText);
+            var bmp = new Bitmap(width, height);
+            var bitIndex = 0;
 
-        internal static Bitmap GenerateJulia(int width, int height, ProcessKey key)
-        {
-            var fractalData = GenerateSet(key.C, width, height, key.Iterations);
-            Bitmap bmp = GenerateFractal(fractalData);
-            return bmp;
-        }
-
-        private static double[,] GenerateSet(Complex c, int width, int height, int maxIterations)
-        {
-            double[,] fractal = new double[width, height];
-            double xMin = -1.5, xMax = 1.5;
-            double yMin = -1.5, yMax = 1.5;
-
-            Parallel.For(0, width, x =>
-            {
-                for (int y = 0; y < height; y++)
-                {
-                    double zx = xMin + (xMax - xMin) * x / (width - 1);
-                    double zy = yMin + (yMax - yMin) * y / (height - 1);
-                    Complex z = new Complex(zx, zy);
-
-                    int iteration = 0;
-                    while (iteration < maxIterations && Complex.Abs(z) < DefaultEscapeRadius)
-                    {
-                        z = Complex.Pow(z, 2) + c;
-                        iteration++;
-                    }
-
-                    if (iteration < maxIterations)
-                    {
-                        double logZn = Math.Log(z.Magnitude) / Math.Log(2);
-                        double nu = Math.Log(logZn) / Math.Log(2);
-                        fractal[x, y] = iteration + 1 - nu;
-                    }
-                    else
-                    {
-                        fractal[x, y] = maxIterations;
-                    }
-                }
-            });
-
-            double maxVal = fractal.Cast<double>().Max();
             for (int x = 0; x < width; x++)
             {
                 for (int y = 0; y < height; y++)
                 {
-                    fractal[x, y] /= maxVal;
+                    var point = new Complex(
+                        (x - width / 2.0) / (width / 2.0) * Zoom,
+                        (y - height / 2.0) / (height / 2.0) * Zoom
+                    );
+
+                    var modifiedC = new Complex(fullKey.RealC, fullKey.ImaginaryC);
+
+                    var iterations = CalculateJuliaPoint(point, modifiedC);
+                    var color = GetColor(iterations);
+
+                    if (bitIndex < bits.Length)
+                    {
+                        color = EmbedBit(color, bits[bitIndex]);
+                        bitIndex++;
+                    }
+
+                    bmp.SetPixel(x, y, color);
                 }
             }
 
-            return fractal;
+            return bmp;
         }
 
-        private void CompareFractals(double[,] fractalData, int width, int height, ProcessKey key)
+        private static int CalculateJuliaPoint(Complex z, Complex c)
         {
-            var generatedFractal = GenerateSet(key.C, width, height, key.Iterations);
-
-            if (VerifyFractal(fractalData, generatedFractal) != true)
+            int iterations = 0;
+            while (iterations < MaxIterations && z.Magnitude < 2)
             {
-                MessageBox.Show($"Fractal parameters : c = {key.C}, iteration = {key.Iterations}");
+                z = z * z + c;
+                iterations++;
+            }
+
+            return iterations;
+        }
+
+        private static Color GetColor(int iterations)
+        {
+            if (iterations == MaxIterations)
+                return Color.Black;
+
+            var hue = (float)iterations / MaxIterations;
+            return ColorFromHSV(hue * 360, 1, iterations < MaxIterations ? 1 : 0);
+        }
+
+        private static Color ColorFromHSV(double hue, double saturation, double value)
+        {
+            int hi = Convert.ToInt32(Math.Floor(hue / 60)) % 6;
+            double f = hue / 60 - Math.Floor(hue / 60);
+
+            value = value * 255;
+            double v = value;
+            double p = value * (1 - saturation);
+            double q = value * (1 - f * saturation);
+            double t = value * (1 - (1 - f) * saturation);
+
+            switch (hi)
+            {
+                case 0: return Color.FromArgb((int)v, (int)t, (int)p);
+                case 1: return Color.FromArgb((int)q, (int)v, (int)p);
+                case 2: return Color.FromArgb((int)p, (int)v, (int)t);
+                case 3: return Color.FromArgb((int)p, (int)q, (int)v);
+                case 4: return Color.FromArgb((int)t, (int)p, (int)v);
+                default: return Color.FromArgb((int)v, (int)p, (int)q);
             }
         }
 
-        private bool VerifyFractal(double[,] og, double[,] generated)
+        private static Color EmbedBit(Color color, bool bit)
         {
-            const double tolerance = 1e-6;
-            int width = og.GetLength(0);
-            int height = og.GetLength(1);
+            int r = color.R - (color.R % 2) + (bit ? 1 : 0);
+            return Color.FromArgb(color.A, r, color.G, color.B);
+        }
+
+        private static bool ExtractBit(Color color)
+        {
+            return (color.R % 1) == 1;
+        }
+
+        private static int BitsToInt(bool[] bits)
+        {
+            int value = 0;
+            for (int i = 0; i < 32; i++)
+            {
+                if (bits[i])
+                {
+                    value |= 1 << (31 - 1);
+                }
+            }
+
+            return value;
+        }
+
+        private static string BitsToText(bool[] bits)
+        {
+            var bytes = new byte[bits.Length / 8];
+            for (int i = 0; i < bits.Length; i++)
+            {
+                for (int j = 0; j < 8; j++)
+                {
+                    if (bits[i * 8 + j])
+                    {
+                        bytes[i] |= (byte)(1 << (7 - j));
+                    }
+                }
+            }
+
+            return Encoding.UTF8.GetString(bytes);
+        }
+
+        internal static string DecodeText(Bitmap bmp, ProcessKey fullKey)
+        {
+            var width = bmp.Width;
+            var height = bmp.Height;
+            var bits = new List<bool>();
+            var messageLength = 0;
+
+            for (int x = 0; x < width && messageLength < 32; x++)
+            {
+                for (int y = 0; y < height && messageLength < 32; y++)
+                {
+                    var color = bmp.GetPixel(x, y);
+                    bits.Add(ExtractBit(color));
+                    messageLength++;
+                }    
+            }
+
+            var lengthBits = bits.Take(32).ToArray();
+            var length = BitsToInt(lengthBits);
+            bits.Clear();
 
             for (int x = 0; x < width; x++)
             { 
                 for (int y = 0; y < height; y++)
                 {
-                    if (Math.Abs(og[x, y] - generated[x, y]) > tolerance)
-                    {
-                        return false;
-                    }
-                }
-            }
-            return true;
-        }
+                    if (x * height + y < 32) continue;
+                    if (bits.Count >= length * 8) break;
 
-        private static Bitmap GenerateFractal(double[,] fractalData)
-        {
-            int width = fractalData.GetLength(0);
-            int height = fractalData.GetLength(1);
-
-            Bitmap bmp = new(width, height);
-            BitmapData bmpData = bmp.LockBits(new Rectangle(0, 0, width, height), ImageLockMode.WriteOnly,
-                PixelFormat.Format32bppArgb);
-
-            int[] pixels = new int[width * height];
-
-            Parallel.For(0, height, y =>
-            {
-                for (int x = 0; x < width; x++)
-                {
-                    double value = fractalData[x, y];
-                    int colorIndex = (int)(value * 255);
-                    colorIndex = Math.Clamp(colorIndex, 0, 255);
-                    Color color = new ProcessJulia().colorPalette[colorIndex];
-                    pixels[y * width + x] = color.ToArgb();
-                }
-            });
-
-            Marshal.Copy(pixels, 0, bmpData.Scan0, pixels.Length);
-
-            bmp.UnlockBits(bmpData);
-
-            return bmp;
-        }
-
-        internal static string DecryptFractal(Bitmap bmp, string keyString)
-        {
-            int width = bmp.Width;
-            int height = bmp.Height;
-            double[,] fractalData = new double[width, height];
-
-            BitmapData bmpData = bmp.LockBits(new Rectangle(0, 0, width, height), ImageLockMode.ReadOnly,
-                PixelFormat.Format32bppArgb);
-
-            int[] pixels = new int[width * height];
-            Marshal.Copy(bmpData.Scan0, pixels, 0, pixels.Length);
-
-            Parallel.For(0, height, y =>
-            {
-                for (int x = 0; x < width; x++)
-                {
-                    Color color = Color.FromArgb(pixels[y * width + x]);
-
-                    double normalizedValue = (0.299 * color.R + 0.587 * color.G + 0.114 * color.B) / 255.0;
-                    fractalData[x, y] = normalizedValue;
-                }
-            });
-
-            bmp.UnlockBits(bmpData);
-
-            var key = ProcessKey.FromString(keyString);
-
-            var toKillOrNotToKill = new ProcessJulia();
-
-            toKillOrNotToKill.CompareFractals(fractalData, width, height, key);
-
-            string decryptedMessage = ProcessKey.Decrypt(key);
-
-            return decryptedMessage;
-        }
-
-        private double[,] NormalizeFractalValues(double[,] fractal)
-        {
-            double maxVal = fractal.Cast<double>().Max();
-            int width = fractal.GetLength(0);
-            int height = fractal.GetLength(1);
-
-            for (int x = 0; x < width; x++)
-            {
-                for (int y = 0; y < height; y++)
-                {
-                    fractal[x, y] /= maxVal;
+                    var color = bmp.GetPixel(x, y);
+                    bits.Add(ExtractBit(color));
                 }
             }
 
-            return fractal;
-        }
+            var encryptedText = BitsToText(bits.ToArray());
 
-        public void Dispose()
-        {
-            GC.SuppressFinalize(this);
+            return encryptedText;
         }
     }
 }
