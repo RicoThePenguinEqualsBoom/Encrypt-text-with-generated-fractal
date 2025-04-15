@@ -8,29 +8,52 @@ namespace SteganoTool
 {
     internal class ImageSize
     {
-        private const int MinPixelsPerParameter = 16;
+        private const int MinWidth = 400;
 
-        private const int ParameterCount = 3;
+        private const int MinHeight = 300;
 
-        private const int MinPatternSize = 160;
+        private const int BitsForLength = 32;
 
-        internal static (int width, int height) CalculateMinimumSize(string text)
+        internal static (int width, int height) CalculateMinimumSize(string text, int width, int height)
         {
-            int textBytes = Encoding.UTF8.GetByteCount(text);
+            if (width < MinWidth || height < MinHeight)
+            {
+                var textBytes = Encoding.UTF8.GetBytes(text);
+                var encryptedSize = ((textBytes.Length / 16) + 1) * 16 + 16;
+                var requiredPixels = BitsForLength + (encryptedSize * 8);
 
-            int minPixelsForData = textBytes * MinPixelsPerParameter * ParameterCount;
+                double aspectRatio = width > 0 ? (double)height / width : 1.5;
+                var sugWidth = (int)(Math.Max((int)Math.Ceiling(Math.Sqrt(requiredPixels * width / height)), MinWidth) * 1.1);
+                var sugHeight = (int)(Math.Max((int)Math.Ceiling(requiredPixels / (double)sugWidth), MinHeight) * 1.1);
 
-            int minTotalPixels = Math.Max(minPixelsForData, MinPatternSize * MinPatternSize);
-
-            int minDimensions = (int)Math.Ceiling(Math.Sqrt(minTotalPixels));
-
-            return (minDimensions, minDimensions);
+                return (sugWidth, sugHeight);
+            }
+            else
+            {
+                return (width, height);
+            }
         }
 
-        internal static bool IsValidSize(int width, int height, string text)
+        internal static (int, int) IsValidSize(int width, int height, string text)
         {
-            var (minWidth, minHeight) = CalculateMinimumSize(text);
-            return width >= minWidth && height >= minHeight;
+            var (sugWidth, sugHeight) = CalculateMinimumSize(text, width, height);
+
+            if (width < sugWidth && height < sugHeight)
+            {
+                return (sugWidth, sugHeight);
+            }
+            else if (width < sugWidth && height >= sugHeight)
+            {
+                return (sugWidth, height);
+            }
+            else if (width >= sugWidth && height < sugHeight)
+            {
+                return (width, sugHeight);
+            }
+            else
+            {
+                return (width, height);
+            }
         }
     }
 }

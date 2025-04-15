@@ -118,8 +118,9 @@ namespace SteganoTool
 
         private void inputText_TextChanged(object sender, EventArgs e)
         {
-            (width, height)= ImageSize.CalculateMinimumSize(inputText.Text);
-            ImageSize.IsValidSize(width, height, inputText.Text);
+            width = int.Parse(ImageW.Text);
+            height = int.Parse(ImageH.Text);
+            (width, height) = ImageSize.IsValidSize(width, height, inputText.Text);
             ImageW.Text = width.ToString();
             ImageH.Text = height.ToString();
         }

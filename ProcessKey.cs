@@ -67,7 +67,7 @@ namespace SteganoTool
             var fullCipher = Convert.FromBase64String(encryptedText);
 
             using var aes = Aes.Create();
-            var iv = new byte[16];
+            var iv = new byte[aes.IV.Length];
             int cipherLength = fullCipher.Length - iv.Length;
             var cipher = new byte[cipherLength];
 
