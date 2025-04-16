@@ -3,6 +3,7 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using System.Windows.Forms;
 using System.IO;
+using System.Numerics;
 
 namespace SteganoTool
 {
@@ -32,13 +33,13 @@ namespace SteganoTool
 
         private string inText;
         private string outText;
-        private string inKey;
+        private string KeyS;
         private string encryptedText;
 
         private Bitmap inputBmp;
         private Bitmap outputBmp;
 
-        private ProcessKey outKey;
+        private Complex KeyC;
 
         private int height;
         private int width;
@@ -87,25 +88,39 @@ namespace SteganoTool
 
         private void encrypt()
         {
+            try
+            {
                 inText = inputText.Text;
                 height = int.Parse(ImageH.Text);
                 width = int.Parse(ImageW.Text);
 
-                (outKey, encryptedText) = ProcessKey.Generate(inText);
+                (KeyS, KeyC) = ProcessKey.Generate(inText);
 
-                outputBmp = ProcessJulia.GenerateJulia(outKey, width, height, encryptedText);
+                outputBmp = ProcessJulia.GenerateJulia(KeyC.Real, KeyC.Imaginary, width, height, inText);
+
+                outText = ProcessJulia.DecodeJulia(outputBmp, KeyS);
+
+                if (outText != inText)
+                {
+                    throw new InvalidOperationException("integ check fail");
+                }
 
                 outputImage.Image = outputBmp;
-                outputKey.Text = outKey.Key;
+                outputKey.Text = KeyS;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.Message);
+            }
         }
 
         private void decrypt()
         {
-                inKey = encryptKey.Text;
+            try
+            {
+                KeyS = encryptKey.Text;
 
-                encryptedText = ProcessJulia.DecodeJulia(inputBmp);
-
-                outText = ProcessKey.DecryptText(encryptedText, inKey);
+                outText = ProcessJulia.DecodeJulia(inputBmp, KeyS);
 
                 if (outText == null)
                 {
@@ -114,9 +129,32 @@ namespace SteganoTool
                 }
 
                 outputText.Text = outText;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.Message);
+            }
         }
 
         private void inputText_TextChanged(object sender, EventArgs e)
+        {
+            width = int.Parse(ImageW.Text);
+            height = int.Parse(ImageH.Text);
+            (width, height) = ImageSize.IsValidSize(width, height, inputText.Text);
+            ImageW.Text = width.ToString();
+            ImageH.Text = height.ToString();
+        }
+
+        private void ImageH_TextChanged(object sender, EventArgs e)
+        {
+            width = int.Parse(ImageW.Text);
+            height = int.Parse(ImageH.Text);
+            (width, height) = ImageSize.IsValidSize(width, height, inputText.Text);
+            ImageW.Text = width.ToString();
+            ImageH.Text = height.ToString();
+        }
+
+        private void ImageW_TextChanged(object sender, EventArgs e)
         {
             width = int.Parse(ImageW.Text);
             height = int.Parse(ImageH.Text);
