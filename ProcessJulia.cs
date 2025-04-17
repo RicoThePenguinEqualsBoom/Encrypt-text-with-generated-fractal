@@ -7,6 +7,7 @@ using System.Drawing;
 using System.CodeDom.Compiler;
 using System.Text;
 using System.Collections;
+using static System.Net.Mime.MediaTypeNames;
 
 namespace SteganoTool
 {
@@ -19,7 +20,12 @@ namespace SteganoTool
         internal unsafe static Bitmap GenerateJulia(double realC, double imagC, int width, int height, string text)
         {
             byte[] messageBytes = Encoding.UTF8.GetBytes(text);
-            var messageBits = new BitArray(messageBytes);
+
+            int requiredPixels = messageBytes.Length * 8 + 32;
+            if (requiredPixels > width * height)
+            {
+                throw new ArgumentException("message too big");
+            }
 
             var bmp = new Bitmap(width, height);
 
@@ -31,29 +37,44 @@ namespace SteganoTool
                 int* scan0 = (int*)bmpData.Scan0.ToPointer();
                 int stride = bmpData.Stride >> 2;
 
-                int processorCount = Environment.ProcessorCount;
-                int blockSize = height / processorCount;
-
-                Parallel.For(0, processorCount, threadIndex =>
+                int messageLength = messageBytes.Length;
+                for (int i = 0; i < 4; i++)
                 {
-                    int startY = threadIndex * blockSize;
-                    int endY = (threadIndex == processorCount - 1) ? height : (threadIndex + 1) * blockSize;
+                    int lengthByte = (messageLength >> (i * 8)) & 0xff;
+                    scan0[i] = (0xFF << 24) | (lengthByte << 16) | (0 << 8) | 0;
+                }
 
-                    for (int y = startY; y < endY; y++)
+                Parallel.For(0, messageBytes.Length, byteIndex =>
+                {
+                    byte currentByte = messageBytes[byteIndex];
+                    int basePixelIndex = 4 + (byteIndex * 8);
+
+                    for (int bitIndex = 0; bitIndex < 8; bitIndex++)
                     {
-                        int* row = scan0 + (y * stride);
+                        int pixelIndex = basePixelIndex + bitIndex;
+                        int y = pixelIndex / width;
+                        int x = pixelIndex % width;
+
+                        bool bit = ((currentByte >> (7 - bitIndex)) & 1) == 1;
+                        int* pixel = scan0 + (y* stride) + x;
+
+                        double zx = (x - width / 2.0) / (width / 4.0);
                         double zy = (y - height / 2.0) / (height / 4.0);
-
-                        for (int x = 0; x < width; x++)
-                        {
-                            double zx = (x - width / 2.0) / (width / 4.0);
-
-                            int iteration = CalculateJuliaPoint(zx, zy, realC, imagC);
-
-                            int color = CalculateColor(iteration, messageBits, x, y, width);
-                            row[x] = color;
-                        }
+                        int iteration = CalculateJuliaPoint(zx, zy, realC, imagC);
+                        *pixel = CalculateColorWithMessage(iteration, bit);
                     }
+                });
+
+                Parallel.For(requiredPixels, width * height, pixelIndex =>
+                {
+                    int y = pixelIndex / width;
+                    int x = pixelIndex % width;
+                    int* pixel = scan0 + (y * stride) + x;
+
+                    double zx = (x - width / 2.0) / (width / 4.0);
+                    double zy = (y - height / 2.0) / (height / 4.0);
+                    int iteration = CalculateJuliaPoint(zx, zy, realC, imagC);
+                    *pixel = CalculateColor(iteration);
                 });
             }
             finally
@@ -66,50 +87,74 @@ namespace SteganoTool
 
         internal static string DecodeJulia(Bitmap bmp, string key)
         {
-            var messageBuilder = new StringBuilder();
-            var bitBuilder = new BitArray(8);
-            int bitIndex = 0;
+            // Add validation for image format
+            if (bmp.PixelFormat != PixelFormat.Format32bppArgb)
+            {
+                throw new ArgumentException("Invalid image format. Image must be 32-bit ARGB.", nameof(bmp));
+            }
 
             BitmapData bmpData = bmp.LockBits(new Rectangle(0, 0, bmp.Width, bmp.Height), ImageLockMode.ReadOnly,
                 PixelFormat.Format32bppArgb);
+
+            var width = bmp.Width;
+            var height = bmp.Height;
 
             try
             {
                 unsafe
                 {
                     int* scan0 = (int*)bmpData.Scan0.ToPointer();
+
+                    int messageLength = 0;
+                    for (int i = 0; i < 4; i++)
+                    {
+                        int pixel = scan0[i];
+                        int lengthByte = (pixel >> 16) & 0xFF;
+                        messageLength |= (lengthByte << (i * 8));
+                    }
+
+                    MessageBox.Show($"message length extracted: {messageLength}");
+
+                    if (messageLength <= 0 || messageLength > (width * height - 4) / 8)
+                    {
+                        throw new InvalidDataException("not good length");
+                    }
+
+                    byte[] messageBytes = new byte[messageLength];
                     int stride = bmpData.Stride >> 2;
 
-                    for (int y = 0; y < bmp.Height; y++)
+                    for (int byteIndex = 0; byteIndex < messageLength; byteIndex++)
                     {
-                        int* row = scan0 + (y * stride);
-                        for (int x = 0; x < bmp.Width; x++)
+                        byte currentByte = 0;
+                        int basePixelIndex = 4 + (byteIndex * 8);
+
+                        for (int bitIndex = 0; bitIndex < 8; bitIndex++)
                         {
-                            int pixel = row[x];
-                            bitBuilder[bitIndex++] = (pixel & 0x010000) != 0;
+                            int pixelIndex = basePixelIndex + bitIndex;
+                            int y = pixelIndex / width;
+                            int x = pixelIndex % width;
+                            int pixel = scan0[y * stride + x];
 
-                            if (bitIndex == 8)
+                            bool bit = (pixel & 0x010000) != 0;
+                            if (bit)
                             {
-                                byte[] byteArray = new byte[1];
-                                bitBuilder.CopyTo(byteArray, 0);
-                                char c = (char)byteArray[0];
-
-                                if (c == '\0')
-                                    return messageBuilder.ToString();
-
-                                messageBuilder.Append(c);
-                                bitIndex = 0;
+                                currentByte |= (byte)(1 << (7 -bitIndex));
                             }
                         }
+                        messageBytes[byteIndex] = currentByte;
                     }
+
+                    MessageBox.Show($"bytes extracted: {BitConverter.ToString(messageBytes)}");
+
+                    var result = Encoding.UTF8.GetString(messageBytes);
+                    MessageBox.Show($"result: {result}");
+                    return result;
                 }
             }
             finally
             {
                 bmp.UnlockBits(bmpData);
             }
-
-            return messageBuilder.ToString();
         }
 
         private static int CalculateJuliaPoint(double zx, double zy, double realC, double imagC)
@@ -130,24 +175,45 @@ namespace SteganoTool
             return iterations;
         }
 
-        private static int CalculateColor(int iteration, BitArray messageBits, int x, int y, int width)
+        private static int CalculateColorWithMessage(int iteration, bool messageBit)
         {
             if (iteration == MaxIterations)
                 return Color.Black.ToArgb();
 
-            int messageIndex = (y * width + x) % messageBits.Length;
+            double smooth = (iteration + 1 - Math.Log(Math.Log(EscapeRadius))) / MaxIterations;
+            smooth = Math.Clamp(smooth, 0, 1);
+
+            double scaledPos = smooth * ()
 
             int r = (iteration * 9) % 256;
             int g = (iteration * 7) % 256;
             int b = (iteration * 5) % 256;
 
-            if (messageIndex < messageBits.Length)
-            {
-                r = (r & 0xFE) | (messageBits[messageIndex] ? 1 : 0);
-            }
+            r = (r & 0xFE) | (messageBit ? 1 : 0);
+
+            return (0xFF << 24) | ((r << 16) | (g << 8) | b);
+        }
+
+        private static int CalculateColor(int iteration)
+        {
+            if (iteration == MaxIterations)
+                return Color.Black.ToArgb();
+
+            int r = (iteration * 9) % 256;
+            int g = (iteration * 7) % 256;
+            int b = (iteration * 5) % 256;
 
             return Color.Black.ToArgb() | ((r << 16) | (g << 8) | b);
         }
+
+        private readonly Color[] gradientColors = new Color[]
+        {
+            Color.FromArgb(255, 0, 7, 100),
+            Color.FromArgb(255, 32, 107, 203),
+            Color.FromArgb(255, 237, 255, 255),
+            Color.FromArgb(255, 255, 170, 0),
+            Color.FromArgb(255, 180, 0, 0)
+        };
 
         public void Dispose()
         {

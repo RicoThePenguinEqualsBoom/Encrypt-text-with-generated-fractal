@@ -4,6 +4,8 @@ using System.Drawing.Imaging;
 using System.Windows.Forms;
 using System.IO;
 using System.Numerics;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace SteganoTool
 {
@@ -33,13 +35,13 @@ namespace SteganoTool
 
         private string inText;
         private string outText;
-        private string KeyS;
+        private string keyS;
         private string encryptedText;
 
         private Bitmap inputBmp;
         private Bitmap outputBmp;
 
-        private Complex KeyC;
+        private Complex keyC;
 
         private int height;
         private int width;
@@ -94,19 +96,21 @@ namespace SteganoTool
                 height = int.Parse(ImageH.Text);
                 width = int.Parse(ImageW.Text);
 
-                (KeyS, KeyC) = ProcessKey.Generate(inText);
+                (keyS, keyC) = ProcessKey.Generate(inText);
 
-                outputBmp = ProcessJulia.GenerateJulia(KeyC.Real, KeyC.Imaginary, width, height, inText);
+                outputBmp = ProcessJulia.GenerateJulia(keyC.Real, keyC.Imaginary, width, height, inText);
 
-                outText = ProcessJulia.DecodeJulia(outputBmp, KeyS);
+                outText = ProcessJulia.DecodeJulia(outputBmp, keyS);
 
                 if (outText != inText)
                 {
+                    MessageBox.Show($"text: {BitConverter.ToString(Encoding.UTF8.GetBytes(inText))}");
+                    MessageBox.Show($"decrypt: {BitConverter.ToString(Encoding.UTF8.GetBytes(outText))}");
                     throw new InvalidOperationException("integ check fail");
                 }
 
                 outputImage.Image = outputBmp;
-                outputKey.Text = KeyS;
+                outputKey.Text = keyS;
             }
             catch (Exception ex)
             {
@@ -118,9 +122,9 @@ namespace SteganoTool
         {
             try
             {
-                KeyS = encryptKey.Text;
+                keyS = encryptKey.Text;
 
-                outText = ProcessJulia.DecodeJulia(inputBmp, KeyS);
+                outText = ProcessJulia.DecodeJulia(inputBmp, keyS);
 
                 if (outText == null)
                 {
