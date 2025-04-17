@@ -58,6 +58,8 @@ namespace SteganoTool
             inputBtn = new Button();
             outputText = new RichTextBox();
             inputImage = new PictureBox();
+            comboBox1 = new ComboBox();
+            label2 = new Label();
             tabControl1.SuspendLayout();
             tabPage1.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)outputImage).BeginInit();
@@ -78,6 +80,8 @@ namespace SteganoTool
             // tabPage1
             // 
             tabPage1.BackColor = SystemColors.Control;
+            tabPage1.Controls.Add(label2);
+            tabPage1.Controls.Add(comboBox1);
             tabPage1.Controls.Add(label10);
             tabPage1.Controls.Add(label9);
             tabPage1.Controls.Add(label8);
@@ -101,7 +105,7 @@ namespace SteganoTool
             // label10
             // 
             label10.AutoSize = true;
-            label10.Location = new Point(554, 207);
+            label10.Location = new Point(424, 208);
             label10.Name = "label10";
             label10.Size = new Size(43, 15);
             label10.TabIndex = 15;
@@ -110,7 +114,7 @@ namespace SteganoTool
             // label9
             // 
             label9.AutoSize = true;
-            label9.Location = new Point(698, 207);
+            label9.Location = new Point(568, 208);
             label9.Name = "label9";
             label9.Size = new Size(39, 15);
             label9.TabIndex = 14;
@@ -119,7 +123,7 @@ namespace SteganoTool
             // label8
             // 
             label8.AutoSize = true;
-            label8.Location = new Point(641, 228);
+            label8.Location = new Point(511, 229);
             label8.Name = "label8";
             label8.Size = new Size(14, 15);
             label8.TabIndex = 13;
@@ -128,7 +132,7 @@ namespace SteganoTool
             // label7
             // 
             label7.AutoSize = true;
-            label7.Location = new Point(612, 165);
+            label7.Location = new Point(482, 166);
             label7.Name = "label7";
             label7.Size = new Size(62, 15);
             label7.TabIndex = 12;
@@ -136,7 +140,7 @@ namespace SteganoTool
             // 
             // ImageW
             // 
-            ImageW.Location = new Point(670, 225);
+            ImageW.Location = new Point(540, 226);
             ImageW.Name = "ImageW";
             ImageW.Size = new Size(100, 23);
             ImageW.TabIndex = 11;
@@ -145,7 +149,7 @@ namespace SteganoTool
             // 
             // ImageH
             // 
-            ImageH.Location = new Point(526, 225);
+            ImageH.Location = new Point(396, 226);
             ImageH.Name = "ImageH";
             ImageH.Size = new Size(100, 23);
             ImageH.TabIndex = 10;
@@ -329,6 +333,24 @@ namespace SteganoTool
             inputImage.TabIndex = 0;
             inputImage.TabStop = false;
             // 
+            // comboBox1
+            // 
+            comboBox1.FormattingEnabled = true;
+            comboBox1.Items.AddRange(new object[] { "Sunset", "Ocean", "Forest" });
+            comboBox1.Location = new Point(731, 226);
+            comboBox1.Name = "comboBox1";
+            comboBox1.Size = new Size(121, 23);
+            comboBox1.TabIndex = 16;
+            // 
+            // label2
+            // 
+            label2.AutoSize = true;
+            label2.Location = new Point(731, 208);
+            label2.Name = "label2";
+            label2.Size = new Size(89, 15);
+            label2.TabIndex = 17;
+            label2.Text = "Gradient theme";
+            // 
             // Form1
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
@@ -374,5 +396,7 @@ namespace SteganoTool
         private Label label7;
         private TextBox ImageW;
         private TextBox ImageH;
+        private Label label2;
+        private ComboBox comboBox1;
     }
 }

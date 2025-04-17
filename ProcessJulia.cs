@@ -16,6 +16,14 @@ namespace SteganoTool
         private const int MaxIterations = 300;
         private const double EscapeRadius = 2.0;
         private bool disposed;
+        private static readonly Color[] gradientColors = new Color[]
+        {
+            Color.FromArgb(255, 0, 0, 139),
+            Color.FromArgb(255, 138, 43, 226),
+            Color.FromArgb(255, 255, 192, 203),
+            Color.FromArgb(255, 255, 127, 80),
+            Color.FromArgb(255, 255, 215, 0)
+        };
 
         internal unsafe static Bitmap GenerateJulia(double realC, double imagC, int width, int height, string text)
         {
@@ -183,11 +191,16 @@ namespace SteganoTool
             double smooth = (iteration + 1 - Math.Log(Math.Log(EscapeRadius))) / MaxIterations;
             smooth = Math.Clamp(smooth, 0, 1);
 
-            double scaledPos = smooth * ()
+            double scaledPos = smooth * (gradientColors.Length - 1);
+            int index = (int)scaledPos;
+            double fraction = scaledPos -index;
 
-            int r = (iteration * 9) % 256;
-            int g = (iteration * 7) % 256;
-            int b = (iteration * 5) % 256;
+            Color c1 = gradientColors[index];
+            Color c2 = gradientColors[Math.Min(index + 1, gradientColors.Length - 1)];
+
+            int r = (int)(c1.R * (1 - fraction) + c2.R * fraction);
+            int g = (int)(c1.G * (1 - fraction) + c2.G * fraction);
+            int b = (int)(c1.B * (1 - fraction) + c2.B * fraction);
 
             r = (r & 0xFE) | (messageBit ? 1 : 0);
 
@@ -199,21 +212,22 @@ namespace SteganoTool
             if (iteration == MaxIterations)
                 return Color.Black.ToArgb();
 
-            int r = (iteration * 9) % 256;
-            int g = (iteration * 7) % 256;
-            int b = (iteration * 5) % 256;
+            double smooth = (iteration + 1 - Math.Log(Math.Log(EscapeRadius))) / MaxIterations;
+            smooth = Math.Clamp(smooth, 0, 1);
+
+            double scaledPos = smooth * (gradientColors.Length - 1);
+            int index = (int)scaledPos;
+            double fraction = scaledPos - index;
+
+            Color c1 = gradientColors[index];
+            Color c2 = gradientColors[Math.Min(index + 1, gradientColors.Length - 1)];
+
+            int r = (int)(c1.R * (1 - fraction) + c2.R * fraction);
+            int g = (int)(c1.G * (1 - fraction) + c2.G * fraction);
+            int b = (int)(c1.B * (1 - fraction) + c2.B * fraction);
 
             return Color.Black.ToArgb() | ((r << 16) | (g << 8) | b);
         }
-
-        private readonly Color[] gradientColors = new Color[]
-        {
-            Color.FromArgb(255, 0, 7, 100),
-            Color.FromArgb(255, 32, 107, 203),
-            Color.FromArgb(255, 237, 255, 255),
-            Color.FromArgb(255, 255, 170, 0),
-            Color.FromArgb(255, 180, 0, 0)
-        };
 
         public void Dispose()
         {
