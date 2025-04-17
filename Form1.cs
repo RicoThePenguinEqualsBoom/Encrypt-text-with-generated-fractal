@@ -98,7 +98,7 @@ namespace SteganoTool
 
                 (keyS, keyC) = ProcessKey.Generate(inText);
 
-                outputBmp = ProcessJulia.GenerateJulia(keyC.Real, keyC.Imaginary, width, height, inText);
+                outputBmp = ProcessJulia.GenerateJulia(keyC.Real, keyC.Imaginary, width, height, keyS, inText);
 
                 outText = ProcessJulia.DecodeJulia(outputBmp, keyS);
 
