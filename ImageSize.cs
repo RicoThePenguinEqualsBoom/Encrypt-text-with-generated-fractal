@@ -14,7 +14,7 @@ namespace SteganoTool
         private const int BitsForLength = 32;
         private const double SafetyMargin = 1.1;
         private const double DefaultAspectRatio = 1.5;
-        private const int AesBlockSize = 16;
+        private const int AesSize = 16;
 
         internal static (int width, int height) CalculateMinimumSize(string text, int width, int height)
         {
@@ -52,8 +52,8 @@ namespace SteganoTool
         private static int CalculateRequiredPixels(string text)
         {
             int textLength = Encoding.UTF8.GetByteCount(text);
-            int paddedLength = ((textLength + AesBlockSize - 1) / AesBlockSize) * AesBlockSize;
-            int encryptedSize = paddedLength + AesBlockSize;
+            int paddedLength = ((textLength + AesSize - 1) / AesSize) * AesSize;
+            int encryptedSize = paddedLength + AesSize;
 
             return BitsForLength + (encryptedSize * 8);
         }
@@ -74,6 +74,18 @@ namespace SteganoTool
             int sugHeight = (int)(Math.Max(Math.Ceiling(baseHeight), MinHeight) * SafetyMargin);
 
             return (sugWidth, sugHeight);
+        }
+
+        internal static bool IsImageLargeEnough(int width, int height, int messageLength)
+        {
+            int totalBits = width * height * 3;
+            int neededBits = (messageLength + 4) * 8;
+            return totalBits >= neededBits;
+        }
+
+        internal static int MaxMessageLength(int width, int height)
+        {
+            return (width * height * 3) / 8 - 4;
         }
     }
 }

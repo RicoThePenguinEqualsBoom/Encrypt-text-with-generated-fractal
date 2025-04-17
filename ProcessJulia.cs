@@ -12,225 +12,134 @@ using System.Security.Cryptography;
 
 namespace SteganoTool
 {
-    internal class ProcessJulia : IDisposable
+    internal class ProcessJulia
     {
+        private const double FractalScale = 1.5;
         private const int MaxIterations = 300;
-        private const double EscapeRadius = 2.0;
-        const double EscapeRadiusSquared = EscapeRadius * EscapeRadius;
-        private bool disposed;
-        private static readonly Color[] gradientColors = new Color[]
+
+        internal static Bitmap GenerateJulia(double real, double imaginary, int width, int height)
         {
-            Color.FromArgb(255, 0, 0, 139),
-            Color.FromArgb(255, 138, 43, 226),
-            Color.FromArgb(255, 255, 192, 203),
-            Color.FromArgb(255, 255, 127, 80),
-            Color.FromArgb(255, 255, 215, 0)
-        };
-
-        internal unsafe static Bitmap GenerateJulia(double realC, double imagC, int width, int height, string key, string text)
-        {
-            byte[] messageBytes = Encoding.UTF8.GetBytes(text);
-
-            int messageLength = messageBytes.Length;
-
-            int requiredPixels = messageLength * 8 + 32;
-            if (requiredPixels > width * height)
-            {
-                throw new ArgumentException("message too big");
-            }
-
-            var bmp = new Bitmap(width, height);
+            Bitmap bmp = new Bitmap(width, height);
 
             BitmapData bmpData = bmp.LockBits(new Rectangle(0, 0, width, height), ImageLockMode.WriteOnly,
                 PixelFormat.Format32bppArgb);
-
-            try
+            unsafe
             {
-                int* scan0 = (int*)bmpData.Scan0.ToPointer();
-                int stride = bmpData.Stride >> 2;
-
-                for (int i = 0; i < 4; i++)
+                byte* ptr = (byte*)bmpData.Scan0.ToPointer();
+                int stride = bmpData.Stride;
+                for (int x = 0; x < width; x++)
                 {
-                    int lengthByte = (messageLength >> (i * 8)) & 0xff;
-                    scan0[i] = (0xFF << 24) | (lengthByte << 16) | (0 << 8) | 0;
-                }
-
-                Parallel.For(0, messageLength, byteIndex =>
-                {
-                    byte currentByte = messageBytes[byteIndex];
-                    int basePixelIndex = 4 + (byteIndex * 8);
-
-                    for (int bitIndex = 0; bitIndex < 8; bitIndex++)
+                    for (int y = 0; y < height; y++)
                     {
-                        int pixelIndex = basePixelIndex + bitIndex;
-                        int y = pixelIndex / width;
-                        int x = pixelIndex % width;
+                        double zx = FractalScale * (x - width / 2.0) / (0.5 * width);
+                        double zy = (y - height / 2.0) / (0.5 * height);
+                        int iteration = CalculateJuliaPoint(zx, zy, real, imaginary);
 
-                        bool bit = ((currentByte >> (7 - bitIndex)) & 1) == 1;
-                        int* pixel = scan0 + (y* stride) + x;
-
-                        double zx = (x - width / 2.0) / (width / 4.0);
-                        double zy = (y - height / 2.0) / (height / 4.0);
-                        int iteration = CalculateJuliaPoint(zx, zy, realC, imagC);
-                        *pixel = CalculateColorWithMessage(iteration, bit);
+                        int colorValue = (iteration * 255 / MaxIterations) % 256;
+                        int px = y * stride + x * 3;
+                        ptr[px] = (byte)colorValue;
+                        ptr[px + 1] = (byte)colorValue;
+                        ptr[px + 2] = (byte)colorValue;
                     }
-                });
-
-                Parallel.For(requiredPixels, width * height, pixelIndex =>
-                {
-                    int y = pixelIndex / width;
-                    int x = pixelIndex % width;
-                    int* pixel = scan0 + (y * stride) + x;
-
-                    double zx = (x - width / 2.0) / (width / 4.0);
-                    double zy = (y - height / 2.0) / (height / 4.0);
-                    int iteration = CalculateJuliaPoint(zx, zy, realC, imagC);
-                    *pixel = CalculateColor(iteration);
-                });
+                }
             }
-            catch
-            {
-                bmp.Dispose();
-                throw;
-            }
-            finally
-            {
-                bmp.UnlockBits(bmpData);
-            }
-
+            bmp.UnlockBits(bmpData);
             return bmp;
         }
 
-        internal static string DecodeJulia(Bitmap bmp, string key)
+        internal static Bitmap EmbedDataLSB(Bitmap bmp, byte[] data)
         {
-            // Add validation for image format
-            if (bmp.PixelFormat != PixelFormat.Format32bppArgb)
+            int width = bmp.Width;
+            int height = bmp.Height;
+            int capacity = width * height * 3 / 8;
+            if (data.Length + 4 > capacity)
+                throw new ArgumentException("message too big for image");
+
+            Bitmap encrypted = new Bitmap(bmp);
+
+            byte[] lengthBytes = BitConverter.GetBytes(data.Length);
+            byte[] fullData = lengthBytes.Concat(data).ToArray();
+
+            int byteIdx = 0, bitIdx = 0;
+            for (int y = 0; y < height && byteIdx < fullData.Length; y++)
             {
-                throw new ArgumentException("Invalid image format. Image must be 32-bit ARGB.", nameof(bmp));
-            }
-
-            BitmapData bmpData = bmp.LockBits(new Rectangle(0, 0, bmp.Width, bmp.Height), ImageLockMode.ReadOnly,
-                PixelFormat.Format32bppArgb);
-
-            var width = bmp.Width;
-            var height = bmp.Height;
-
-            try
-            {
-                unsafe
+                for (int x = 0; x < width && byteIdx < fullData.Length; x++)
                 {
-                    int* scan0 = (int*)bmpData.Scan0.ToPointer();
-
-                    int messageLength = 0;
-                    for (int i = 0; i < 4; i++)
+                    Color pixel = encrypted.GetPixel(x, y);
+                    byte[] rgb = { pixel.R, pixel.G, pixel.B };
+                    for (int c = 0; c < 3 && byteIdx < fullData.Length; c++)
                     {
-                        int pixel = scan0[i];
-                        int lengthByte = (pixel >> 16) & 0xFF;
-                        messageLength |= (lengthByte << (i * 8));
-                    }
-
-                    MessageBox.Show($"message length extracted: {messageLength}");
-
-                    if (messageLength <= 0 || messageLength > (width * height - 4) / 8)
-                    {
-                        throw new InvalidDataException("not good length");
-                    }
-
-                    byte[] messageBytes = new byte[messageLength];
-                    int stride = bmpData.Stride >> 2;
-
-                    for (int byteIndex = 0; byteIndex < messageLength; byteIndex++)
-                    {
-                        byte currentByte = 0;
-                        int basePixelIndex = 4 + (byteIndex * 8);
-
-                        for (int bitIndex = 0; bitIndex < 8; bitIndex++)
+                        int bit = (fullData[byteIdx] >> (7 - bitIdx)) & 1;
+                        rgb[c] = (byte)((rgb[c] & 0xFE) | bit);
+                        bitIdx++;
+                        if (bitIdx == 8)
                         {
-                            int pixelIndex = basePixelIndex + bitIndex;
-                            int y = pixelIndex / width;
-                            int x = pixelIndex % width;
-                            int pixel = scan0[y * stride + x];
-
-                            bool bit = (pixel & 0x010000) != 0;
-                            if (bit)
-                            {
-                                currentByte |= (byte)(1 << (7 -bitIndex));
-                            }
+                            bitIdx = 0;
+                            byteIdx++;
                         }
-                        messageBytes[byteIndex] = currentByte;
                     }
 
-                    MessageBox.Show($"bytes extracted: {BitConverter.ToString(messageBytes)}");
-
-                    var result = Encoding.UTF8.GetString(messageBytes);
-                    MessageBox.Show($"result: {result}");
-                    return result;
+                    Color newPixel = Color.FromArgb(rgb[0], rgb[1], rgb[2]);
+                    encrypted.SetPixel(x, y, newPixel);
                 }
             }
-            finally
-            {
-                bmp.UnlockBits(bmpData);
-            }
+
+            return encrypted;
         }
 
-        private static int CalculateJuliaPoint(double zx, double zy, double realC, double imagC)
+        internal static byte[] ExtractDataLSB(Bitmap bmp)
+        {
+            int width = bmp.Width;
+            int height = bmp.Height;
+            byte[] buffer = new byte[width * height * 3 / 8];
+
+            int byteIdx = 0, bitIdx = 0;
+            int dataLen = -1;
+            for (int y = 0; y < height && (dataLen == -1 || byteIdx < dataLen + 4); y++)
+            {
+                for (int x = 0; x < width && (dataLen == -1 || byteIdx < dataLen + 4); x++)
+                {
+                    Color pixel = bmp.GetPixel(x, y);
+                    byte[] rgb = { pixel.R, pixel.G, pixel.B };
+                    for (int c = 0; c < 3 && (dataLen == -1 || byteIdx < dataLen + 4); c++)
+                    {
+                        int bit = rgb[c] & 1;
+                        buffer[byteIdx] = (byte)((buffer[byteIdx] << 1) | bit);
+                        bitIdx++;
+                        if (bitIdx == 8)
+                        {
+                            bitIdx = 0;
+                            byteIdx++;
+                            if (byteIdx == 4 && dataLen == -1)
+                            {
+                                dataLen = BitConverter.ToInt32(buffer, 0);
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (dataLen < 0 || dataLen > buffer.Length - 4)
+                throw new InvalidOperationException("no data");
+
+            byte[] result = new byte[dataLen];
+            Array.Copy(buffer, 4, result, 0, dataLen);
+            return result;
+        }
+
+        private static int CalculateJuliaPoint(double zx, double zy, double real, double imaginary)
         {
             int iterations = 0;
-            double zx2 = zx * zx;
-            double zy2 = zy * zy;
 
-            while (iterations < MaxIterations)
+            while (zx * zx + zy * zy < 4 && iterations < MaxIterations)
             {
-                if (zx2 + zy2 >= EscapeRadiusSquared)
-                     break; 
-
-                zy = 2 * zx * zy + imagC;
-                zx = zx2 - zy2 + realC;
-                zx2 = zx * zx;
-                zy2 = zy * zy;
+                double temp = zx * zx - zy * zy + real;
+                zy = 2.0 * zx * zy + imaginary;
+                zx = temp;
                 iterations++;
             }
-            
+
             return iterations;
-        }
-
-        private static int CalculateColorWithMessage(int iteration, bool messageBit)
-        {
-            if (iteration == MaxIterations)
-                return Color.Black.ToArgb();
-
-            double smooth = (iteration + 1 - Math.Log(Math.Log(EscapeRadius))) / MaxIterations;
-            smooth = Math.Clamp(smooth, 0, 1);
-
-            int r = (int)(smooth * 255);
-            int g = (int)(Math.Sin(smooth * Math.PI) * 255);
-            int b = (int)(Math.Cos(smooth * Math.PI * 0.5) * 255);
-
-            r = (r & 0xFE) | (messageBit ? 1 : 0);
-
-            return (0xFF << 24) | ((r << 16) | (g << 8) | b);
-        }
-
-        private static int CalculateColor(int iteration)
-        {
-            if (iteration == MaxIterations)
-                return Color.Black.ToArgb();
-
-            double smooth = (iteration + 1 - Math.Log(Math.Log(EscapeRadius))) / MaxIterations;
-            smooth = Math.Clamp(smooth, 0, 1);
-
-            int r = (int)(smooth * 255);
-            int g = (int)(Math.Sin(smooth * Math.PI) * 255);
-            int b = (int)(Math.Cos(smooth * Math.PI * 0.5) * 255);
-
-            return Color.Black.ToArgb() | ((r << 16) | (g << 8) | b);
-        }
-
-        public void Dispose()
-        {
-            if (!disposed)
-                disposed = true;
-            GC.SuppressFinalize(this);
         }
     }
 }

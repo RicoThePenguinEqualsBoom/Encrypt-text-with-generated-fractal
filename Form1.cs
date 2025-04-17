@@ -96,18 +96,28 @@ namespace SteganoTool
                 height = int.Parse(ImageH.Text);
                 width = int.Parse(ImageW.Text);
 
-                (keyS, keyC) = ProcessKey.Generate(inText);
+                var (key, iv) = ProcessKey.Generate();
 
-                outputBmp = ProcessJulia.GenerateJulia(keyC.Real, keyC.Imaginary, width, height, keyS, inText);
+                var encrypted = ProcessKey.EncryptWithAes(Encoding.UTF8.GetBytes(inText), key, iv);
 
-                outText = ProcessJulia.DecodeJulia(outputBmp, keyS);
-
-                if (outText != inText)
+                if (!ImageSize.IsImageLargeEnough(width, height, encrypted.Length))
                 {
-                    MessageBox.Show($"text: {BitConverter.ToString(Encoding.UTF8.GetBytes(inText))}");
-                    MessageBox.Show($"decrypt: {BitConverter.ToString(Encoding.UTF8.GetBytes(outText))}");
-                    throw new InvalidOperationException("integ check fail");
+                    throw new Exception("image not big");
                 }
+
+                var (real, imag) = ProcessKey.GenerateFractalModifier(encrypted);
+
+                Bitmap bmp = ProcessJulia.GenerateJulia(real, imag, width, height);
+
+                outputBmp = ProcessJulia.EmbedDataLSB(bmp, encrypted);
+
+                keyS = ProcessKey.ComposeKeyString(key, iv, real, imag);
+
+                var (dkey, div, dreal, dimag) = ProcessKey.ParseKeyString(keyS);
+
+                var decrypted = ProcessJulia.ExtractDataLSB(outputBmp);
+
+                MessageBox.Show($"result: {Encoding.UTF8.GetString(ProcessKey.DecryptWithAes(decrypted, dkey, div))}");
 
                 outputImage.Image = outputBmp;
                 outputKey.Text = keyS;
@@ -124,7 +134,11 @@ namespace SteganoTool
             {
                 keyS = encryptKey.Text;
 
-                outText = ProcessJulia.DecodeJulia(inputBmp, keyS);
+                var (DKey, DIv, DReal, DImag) = ProcessKey.ParseKeyString(keyS);
+
+                var decrypted = ProcessJulia.ExtractDataLSB(inputBmp);
+
+                outText = Encoding.UTF8.GetString(ProcessKey.DecryptWithAes(decrypted, DKey, DIv));
 
                 if (outText == null)
                 {
@@ -142,29 +156,17 @@ namespace SteganoTool
 
         private void inputText_TextChanged(object sender, EventArgs e)
         {
-            width = int.Parse(ImageW.Text);
-            height = int.Parse(ImageH.Text);
-            (width, height) = ImageSize.IsValidSize(width, height, inputText.Text);
-            ImageW.Text = width.ToString();
-            ImageH.Text = height.ToString();
+
         }
 
-        private void ImageH_TextChanged(object sender, EventArgs e)
+        private void ImageH_LostFocus(object sender, EventArgs e)
         {
-            width = int.Parse(ImageW.Text);
-            height = int.Parse(ImageH.Text);
-            (width, height) = ImageSize.IsValidSize(width, height, inputText.Text);
-            ImageW.Text = width.ToString();
-            ImageH.Text = height.ToString();
+
         }
 
-        private void ImageW_TextChanged(object sender, EventArgs e)
+        private void ImageW_LostFocus(object sender, EventArgs e)
         {
-            width = int.Parse(ImageW.Text);
-            height = int.Parse(ImageH.Text);
-            (width, height) = ImageSize.IsValidSize(width, height, inputText.Text);
-            ImageW.Text = width.ToString();
-            ImageH.Text = height.ToString();
+
         }
     }
 }
