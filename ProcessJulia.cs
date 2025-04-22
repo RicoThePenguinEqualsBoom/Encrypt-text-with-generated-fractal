@@ -15,7 +15,7 @@ namespace SteganoTool
     internal class ProcessJulia
     {
         private const double FractalScale = 1.5;
-        private const int MaxIterations = 300;
+        private const int MaxIterations = 5000;
 
         internal static Bitmap GenerateJulia(double real, double imaginary, int width, int height)
         {
@@ -27,6 +27,10 @@ namespace SteganoTool
             {
                 byte* ptr = (byte*)bmpData.Scan0.ToPointer();
                 int stride = bmpData.Stride;
+                int minit = MaxIterations;
+                int maxit = 0;
+                int zero = 0;
+                int total = width * height;
                 for (int x = 0; x < width; x++)
                 {
                     for (int y = 0; y < height; y++)
@@ -34,14 +38,33 @@ namespace SteganoTool
                         double zx = FractalScale * (x - width / 2.0) / (0.5 * width);
                         double zy = (y - height / 2.0) / (0.5 * height);
                         int iteration = CalculateJuliaPoint(zx, zy, real, imaginary);
+                        int px = y * stride + x * 4;
 
-                        int colorValue = (iteration * 255 / MaxIterations) % 256;
-                        int px = y * stride + x * 3;
-                        ptr[px] = (byte)colorValue;
-                        ptr[px + 1] = (byte)colorValue;
-                        ptr[px + 2] = (byte)colorValue;
+                        minit = Math.Min(minit, iteration);
+                        maxit = Math.Max(maxit, iteration);
+                        if (iteration == 0) zero++;
+
+                        if (iteration == MaxIterations)
+                        {
+                            ptr[px] = 0;
+                            ptr[px + 1] = 0;
+                            ptr[px + 2] = 0;
+                            ptr[px + 3] = 255;
+                        }
+                        else
+                        {
+                            double norm = (double)(iteration - 1) / (MaxIterations - 1);
+                            double hue = 360.0 * norm;
+                            Color colorValue = ColorFromHSV(hue, 1.0, 1.0);
+
+                            ptr[px] = colorValue.B;
+                            ptr[px + 1] = colorValue.G;
+                            ptr[px + 2] = colorValue.R;
+                            ptr[px + 3] = 255;
+                        }
                     }
                 }
+                MessageBox.Show($" min : {minit} max : {maxit}, zeros : {zero} / {total}");
             }
             bmp.UnlockBits(bmpData);
             return bmp;
@@ -55,7 +78,7 @@ namespace SteganoTool
             if (data.Length + 4 > capacity)
                 throw new ArgumentException("message too big for image");
 
-            Bitmap encrypted = new Bitmap(bmp);
+            Bitmap encrypted = bmp;
 
             byte[] lengthBytes = BitConverter.GetBytes(data.Length);
             byte[] fullData = lengthBytes.Concat(data).ToArray();
@@ -140,6 +163,33 @@ namespace SteganoTool
             }
 
             return iterations;
+        }
+
+        private static Color ColorFromHSV(double hue, double sat, double value)
+        {
+            hue = hue % 360;
+            if (hue < 0) hue += 360;
+            sat = Math.Clamp(sat, 0, 1);
+            value = Math.Clamp(value, 0, 1);
+
+            int hi = Convert.ToInt32(Math.Floor(hue / 60)) % 6;
+            double f = hue / 60 - Math.Floor(hue / 60);
+
+            value = value * 255;
+            int v = (int)value;
+            int p = (int)(value * (1 - sat));
+            int q = (int)(value * (1 - f * sat));
+            int t = (int)(value * (1 - (1 - f) * sat));
+
+            return hi switch
+            {
+                0 => Color.FromArgb(v, t, p),
+                1 => Color.FromArgb(q, v, p),
+                2 => Color.FromArgb(p, v, t),
+                3 => Color.FromArgb(p, q, v),
+                4 => Color.FromArgb(t, p, v),
+                _ => Color.FromArgb(v, p, q)
+            };
         }
     }
 }
