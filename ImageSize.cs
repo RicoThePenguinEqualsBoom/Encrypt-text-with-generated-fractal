@@ -9,8 +9,8 @@ namespace SteganoTool
 {
     internal class ImageSize
     {
-        private const int MinWidth = 400;
-        private const int MinHeight = 300;
+        private const int MinWidth = 500;
+        private const int MinHeight = 500;
         private const int BitsForLength = 32;
         private const double SafetyMargin = 1.1;
         private const double DefaultAspectRatio = 1.5;
@@ -23,12 +23,13 @@ namespace SteganoTool
                 MessageBox.Show("Width and height must be non-negative.");
             }
 
-            if (width >= MinWidth && height >= MinHeight)
+            int requiredPixels = CalculateRequiredPixels(text);
+
+            if (requiredPixels <= width * height)
             {
                 return (width, height);
             }
 
-            int requiredPixels = CalculateRequiredPixels(text);
             double aspectRatio = CalculateAspectRatio(width, height);
 
             var (sugWidth, sugHeight) = CalculateOptimalDimensions(requiredPixels, aspectRatio);
@@ -36,7 +37,7 @@ namespace SteganoTool
             return (sugWidth, sugHeight);
         }
 
-        internal static (int, int) IsValidSize(int width, int height, string text)
+        internal static (int width, int height) ValidSize(int width, int height, string text)
         {
             var (sugWidth, sugHeight) = CalculateMinimumSize(text, width, height);
 
@@ -76,16 +77,11 @@ namespace SteganoTool
             return (sugWidth, sugHeight);
         }
 
-        internal static bool IsImageLargeEnough(int width, int height, int messageLength)
+        internal static bool IsBigEnough(int width, int height, int messageLength)
         {
             int totalBits = width * height * 3;
             int neededBits = (messageLength + 4) * 8;
             return totalBits >= neededBits;
-        }
-
-        internal static int MaxMessageLength(int width, int height)
-        {
-            return (width * height * 3) / 8 - 4;
         }
     }
 }

@@ -34,6 +34,8 @@ namespace SteganoTool
         {
             tabControl1 = new TabControl();
             tabPage1 = new TabPage();
+            label2 = new Label();
+            comboBox1 = new ComboBox();
             label10 = new Label();
             label9 = new Label();
             label8 = new Label();
@@ -58,8 +60,6 @@ namespace SteganoTool
             inputBtn = new Button();
             outputText = new RichTextBox();
             inputImage = new PictureBox();
-            comboBox1 = new ComboBox();
-            label2 = new Label();
             tabControl1.SuspendLayout();
             tabPage1.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)outputImage).BeginInit();
@@ -101,6 +101,24 @@ namespace SteganoTool
             tabPage1.Size = new Size(1314, 606);
             tabPage1.TabIndex = 0;
             tabPage1.Text = "Encrypt";
+            // 
+            // label2
+            // 
+            label2.AutoSize = true;
+            label2.Location = new Point(731, 208);
+            label2.Name = "label2";
+            label2.Size = new Size(89, 15);
+            label2.TabIndex = 17;
+            label2.Text = "Gradient theme";
+            // 
+            // comboBox1
+            // 
+            comboBox1.FormattingEnabled = true;
+            comboBox1.Items.AddRange(new object[] { "Classic", "Rainbow" });
+            comboBox1.Location = new Point(731, 226);
+            comboBox1.Name = "comboBox1";
+            comboBox1.Size = new Size(121, 23);
+            comboBox1.TabIndex = 16;
             // 
             // label10
             // 
@@ -144,7 +162,7 @@ namespace SteganoTool
             ImageW.Name = "ImageW";
             ImageW.Size = new Size(100, 23);
             ImageW.TabIndex = 11;
-            ImageW.Text = "345";
+            ImageW.Text = "500";
             ImageW.LostFocus += ImageW_LostFocus;
             // 
             // ImageH
@@ -153,7 +171,7 @@ namespace SteganoTool
             ImageH.Name = "ImageH";
             ImageH.Size = new Size(100, 23);
             ImageH.TabIndex = 10;
-            ImageH.Text = "345";
+            ImageH.Text = "500";
             ImageH.LostFocus += ImageH_LostFocus;
             // 
             // label3
@@ -333,24 +351,6 @@ namespace SteganoTool
             inputImage.TabIndex = 0;
             inputImage.TabStop = false;
             // 
-            // comboBox1
-            // 
-            comboBox1.FormattingEnabled = true;
-            comboBox1.Items.AddRange(new object[] { "Sunset", "Ocean", "Forest" });
-            comboBox1.Location = new Point(731, 226);
-            comboBox1.Name = "comboBox1";
-            comboBox1.Size = new Size(121, 23);
-            comboBox1.TabIndex = 16;
-            // 
-            // label2
-            // 
-            label2.AutoSize = true;
-            label2.Location = new Point(731, 208);
-            label2.Name = "label2";
-            label2.Size = new Size(89, 15);
-            label2.TabIndex = 17;
-            label2.Text = "Gradient theme";
-            // 
             // Form1
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
@@ -359,6 +359,7 @@ namespace SteganoTool
             Controls.Add(tabControl1);
             Name = "Form1";
             Text = "Form1";
+            Load += Form1_Load;
             tabControl1.ResumeLayout(false);
             tabPage1.ResumeLayout(false);
             tabPage1.PerformLayout();

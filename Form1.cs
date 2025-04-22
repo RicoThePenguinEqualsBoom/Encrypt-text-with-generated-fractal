@@ -11,12 +11,18 @@ namespace SteganoTool
 {
     internal partial class Form1 : Form
     {
+        private void Form1_Load(object sender, EventArgs e)
+        {
+            comboBox1.SelectedItem = "Rainbow";
+        }
+
         internal Form1()
         {
             this.Font = SystemFonts.MessageBoxFont;
             InitializeComponent();
         }
 
+        #region Variable decleration
         private readonly OpenFileDialog ofd = new()
         {
             Filter = "Image files (*.png)|*.png",
@@ -36,15 +42,19 @@ namespace SteganoTool
         private string inText;
         private string outText;
         private string keyS;
-        private string encryptedText;
 
         private Bitmap inputBmp;
         private Bitmap outputBmp;
 
         private Complex keyC;
 
+        private byte[] key;
+        private byte[] iv;
+        private byte[] encrypted;
+
         private int height;
         private int width;
+        #endregion
 
         private void csBtn_Click(object sender, EventArgs e)
         {
@@ -77,10 +87,7 @@ namespace SteganoTool
 
         private void encryptBtn_Click(object sender, EventArgs e)
         {
-            if (inputText.Text != null)
-            {
-                encrypt();
-            }
+            if (inputText.Text != null) { encrypt(); }
         }
 
         private void decryptBtn_Click(object sender, EventArgs e)
@@ -96,22 +103,22 @@ namespace SteganoTool
                 height = int.Parse(ImageH.Text);
                 width = int.Parse(ImageW.Text);
 
-                var (key, iv) = ProcessKey.Generate();
+                (key, iv) = ProcessKey.Generate();
 
-                var encrypted = ProcessKey.EncryptWithAes(Encoding.UTF8.GetBytes(inText), key, iv);
+                encrypted = ProcessKey.EncryptWithAes(Encoding.UTF8.GetBytes(inText), key, iv);
 
-                if (!ImageSize.IsImageLargeEnough(width, height, encrypted.Length))
+                if (!ImageSize.IsBigEnough(width, height, encrypted.Length))
                 {
                     throw new Exception("image not big");
                 }
 
-                var (real, imag) = ProcessKey.GenerateFractalModifier(encrypted);
+                keyC = ProcessKey.GenerateFractalModifier(encrypted);
 
-                Bitmap bmp = ProcessJulia.GenerateJulia(real, imag, width, height);
+                Bitmap bmp = ProcessJulia.GenerateJulia(keyC, width, height, comboBox1.Text);
 
                 outputBmp = ProcessJulia.EmbedDataLSB(bmp, encrypted);
 
-                keyS = ProcessKey.ComposeKeyString(key, iv, real, imag);
+                keyS = ProcessKey.ComposeKeyString(key, iv, keyC);
 
                 var (dkey, div, dreal, dimag) = ProcessKey.ParseKeyString(keyS);
 
@@ -156,17 +163,32 @@ namespace SteganoTool
 
         private void inputText_TextChanged(object sender, EventArgs e)
         {
-
+            width = int.Parse(ImageW.Text);
+            height = int.Parse(ImageH.Text);
+            if (ImageSize.IsBigEnough(width, height, inputText.Text.Length) == false)
+            {
+                (width, height) = ImageSize.ValidSize(width, height, inputText.Text);
+            }
         }
 
         private void ImageH_LostFocus(object sender, EventArgs e)
         {
-
+            width = int.Parse(ImageW.Text);
+            height = int.Parse(ImageH.Text);
+            if (ImageSize.IsBigEnough(width, height, inputText.Text.Length) == false)
+            {
+                (width, height) = ImageSize.ValidSize(width, height, inputText.Text);
+            }
         }
 
         private void ImageW_LostFocus(object sender, EventArgs e)
         {
-
+            width = int.Parse(ImageW.Text);
+            height = int.Parse(ImageH.Text);
+            if (ImageSize.IsBigEnough(width, height, inputText.Text.Length) == false)
+            {
+                (width, height) = ImageSize.ValidSize(width, height, inputText.Text);
+            }
         }
     }
 }

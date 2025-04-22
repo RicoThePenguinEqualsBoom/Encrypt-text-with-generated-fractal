@@ -60,25 +60,26 @@ namespace SteganoTool
             }
         }
 
-        internal static (double real, double imag) GenerateFractalModifier(byte[] encrypted)
+        internal static Complex GenerateFractalModifier(byte[] encrypted)
         {
             using (var sha256 = SHA256.Create())
             {
                 var hash = sha256.ComputeHash(encrypted);
                 double real = BitConverter.ToDouble(hash, 0) % 2 - 1;
                 double imag = BitConverter.ToDouble(hash, 8) % 2 - 1;
-                return (real, imag);
+                Complex c = new Complex(real, imag);
+                return c;
             }
         }
 
-        internal static string ComposeKeyString(byte[] key, byte[] iv, double real, double imag)
+        internal static string ComposeKeyString(byte[] key, byte[] iv, Complex c)
         {
             var parts = new[]
             {
                 Convert.ToBase64String(key),
                 Convert.ToBase64String(iv),
-                real.ToString("F15"),
-                imag.ToString("F15")
+                c.Real.ToString("F15"),
+                c.Imaginary.ToString("F15")
             };
             return string.Join("|", parts);
         }
