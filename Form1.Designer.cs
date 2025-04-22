@@ -76,6 +76,7 @@ namespace SteganoTool
             tabControl1.SelectedIndex = 0;
             tabControl1.Size = new Size(1322, 634);
             tabControl1.TabIndex = 20;
+            tabControl1.SelectedIndexChanged += tabControl1_SelectedIndexChanged;
             // 
             // tabPage1
             // 
@@ -368,6 +369,11 @@ namespace SteganoTool
             tabPage2.PerformLayout();
             ((System.ComponentModel.ISupportInitialize)inputImage).EndInit();
             ResumeLayout(false);
+        }
+
+        private void TabControl1_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            throw new NotImplementedException();
         }
 
         #endregion

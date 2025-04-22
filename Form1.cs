@@ -6,6 +6,7 @@ using System.IO;
 using System.Numerics;
 using System.Security.Cryptography;
 using System.Text;
+using static System.Windows.Forms.VisualStyles.VisualStyleElement;
 
 namespace SteganoTool
 {
@@ -13,7 +14,7 @@ namespace SteganoTool
     {
         private void Form1_Load(object sender, EventArgs e)
         {
-            comboBox1.SelectedItem = "Rainbow";
+            comboBox1.SelectedItem = "Classic";
         }
 
         internal Form1()
@@ -39,21 +40,27 @@ namespace SteganoTool
 
         ImageFormat pngFormat = ImageFormat.Png;
 
-        private string inText;
-        private string outText;
-        private string keyS;
+        private string EText;
+        private string DText;
+        private string key;
 
-        private Bitmap inputBmp;
-        private Bitmap outputBmp;
+        private Bitmap EBmp;
+        private Bitmap DBmp;
 
         private Complex keyC;
 
-        private byte[] key;
-        private byte[] iv;
+        private byte[] EKey;
+        private byte[] EIv;
         private byte[] encrypted;
+        private byte[] DKey;
+        private byte[] DIv;
+        private byte[] decrypted;
 
         private int height;
         private int width;
+
+        private double DReal;
+        private double DImag;
         #endregion
 
         private void csBtn_Click(object sender, EventArgs e)
@@ -61,7 +68,7 @@ namespace SteganoTool
             if (outputKey.Text != null) { Clipboard.SetText(outputKey.Text); }
             if (sfd.ShowDialog() == DialogResult.OK)
             {
-                outputBmp.Save(sfd.FileName, pngFormat);
+                EBmp.Save(sfd.FileName, pngFormat);
                 Application.Exit();
             }
         }
@@ -70,8 +77,8 @@ namespace SteganoTool
         {
             if (ofd.ShowDialog() == DialogResult.OK)
             {
-                inputBmp = new Bitmap(ofd.FileName);
-                inputImage.Image = inputBmp;
+                DBmp = new Bitmap(ofd.FileName);
+                inputImage.Image = DBmp;
             }
         }
 
@@ -92,42 +99,31 @@ namespace SteganoTool
 
         private void decryptBtn_Click(object sender, EventArgs e)
         {
-            if (inputBmp != null) { decrypt(); }
+            if (DBmp != null) { decrypt(); }
         }
 
         private void encrypt()
         {
             try
             {
-                inText = inputText.Text;
+                EText = inputText.Text;
                 height = int.Parse(ImageH.Text);
                 width = int.Parse(ImageW.Text);
 
-                (key, iv) = ProcessKey.Generate();
+                (EKey, EIv) = ProcessKey.Generate();
 
-                encrypted = ProcessKey.EncryptWithAes(Encoding.UTF8.GetBytes(inText), key, iv);
-
-                if (!ImageSize.IsBigEnough(width, height, encrypted.Length))
-                {
-                    throw new Exception("image not big");
-                }
+                encrypted = ProcessKey.EncryptWithAes(Encoding.UTF8.GetBytes(EText), EKey, EIv);
 
                 keyC = ProcessKey.GenerateFractalModifier(encrypted);
 
                 Bitmap bmp = ProcessJulia.GenerateJulia(keyC, width, height, comboBox1.Text);
 
-                outputBmp = ProcessJulia.EmbedDataLSB(bmp, encrypted);
+                EBmp = ProcessJulia.EmbedDataLSB(bmp, encrypted);
 
-                keyS = ProcessKey.ComposeKeyString(key, iv, keyC);
+                key = ProcessKey.ComposeKeyString(EKey, EIv, keyC);
 
-                var (dkey, div, dreal, dimag) = ProcessKey.ParseKeyString(keyS);
-
-                var decrypted = ProcessJulia.ExtractDataLSB(outputBmp);
-
-                MessageBox.Show($"result: {Encoding.UTF8.GetString(ProcessKey.DecryptWithAes(decrypted, dkey, div))}");
-
-                outputImage.Image = outputBmp;
-                outputKey.Text = keyS;
+                outputImage.Image = EBmp;
+                outputKey.Text = key;
             }
             catch (Exception ex)
             {
@@ -139,21 +135,21 @@ namespace SteganoTool
         {
             try
             {
-                keyS = encryptKey.Text;
+                key = encryptKey.Text;
 
-                var (DKey, DIv, DReal, DImag) = ProcessKey.ParseKeyString(keyS);
+                (DKey, DIv, DReal, DImag) = ProcessKey.ParseKeyString(key);
 
-                var decrypted = ProcessJulia.ExtractDataLSB(inputBmp);
+                decrypted = ProcessJulia.ExtractDataLSB(DBmp);
 
-                outText = Encoding.UTF8.GetString(ProcessKey.DecryptWithAes(decrypted, DKey, DIv));
+                DText = Encoding.UTF8.GetString(ProcessKey.DecryptWithAes(decrypted, DKey, DIv));
 
-                if (outText == null)
+                if (DKey == null || DIv == null || DReal == 0 || DImag == 0 || decrypted == null || DText == null)
                 {
                     MessageBox.Show("La clé est incorrecte ou l'image ne contient pas de message caché.");
                     return;
                 }
 
-                outputText.Text = outText;
+                outputText.Text = DText;
             }
             catch (Exception ex)
             {
@@ -169,6 +165,8 @@ namespace SteganoTool
             {
                 (width, height) = ImageSize.ValidSize(width, height, inputText.Text);
             }
+            ImageW.Text = width.ToString();
+            ImageH.Text = height.ToString();
         }
 
         private void ImageH_LostFocus(object sender, EventArgs e)
@@ -179,6 +177,8 @@ namespace SteganoTool
             {
                 (width, height) = ImageSize.ValidSize(width, height, inputText.Text);
             }
+            ImageW.Text = width.ToString();
+            ImageH.Text = height.ToString();
         }
 
         private void ImageW_LostFocus(object sender, EventArgs e)
@@ -188,6 +188,16 @@ namespace SteganoTool
             if (ImageSize.IsBigEnough(width, height, inputText.Text.Length) == false)
             {
                 (width, height) = ImageSize.ValidSize(width, height, inputText.Text);
+            }
+            ImageW.Text = width.ToString();
+            ImageH.Text = height.ToString();
+        }
+
+        private void tabControl1_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            if (tabControl1.SelectedTab == tabControl1.TabPages[1])
+            {
+                MessageBox.Show("Warning!!! Wrong input of decryption parameters will result in BSOD");
             }
         }
     }
