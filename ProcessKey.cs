@@ -65,8 +65,16 @@ namespace SteganoTool
             using (var sha256 = SHA256.Create())
             {
                 var hash = sha256.ComputeHash(encrypted);
-                double real = BitConverter.ToDouble(hash, 0) % 2 - 1;
-                double imag = BitConverter.ToDouble(hash, 8) % 2 - 1;
+                ulong realBits = BitConverter.ToUInt64(hash, 0);
+                ulong imagBits = BitConverter.ToUInt64(hash, 8);
+
+                double realNorm = realBits / (double)ulong.MaxValue;
+                double imagNorm = imagBits / (double)ulong.MaxValue;
+
+                double range = 1.2;
+                double real = (realNorm * 2 - 1) * range;
+                double imag = (imagNorm * 2 - 1) * range;
+
                 Complex c = new Complex(real, imag);
                 return c;
             }

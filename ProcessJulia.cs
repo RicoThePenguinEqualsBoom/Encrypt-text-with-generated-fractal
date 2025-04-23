@@ -15,7 +15,7 @@ namespace SteganoTool
     internal class ProcessJulia
     {
         private const double EscapeRadius = 2.0;
-        private const int MaxIterations = 1_000_000_000;        
+        private const int MaxIterations = 50_000;        
 
         internal static Bitmap GenerateJulia(Complex c, int width, int height, string colorMethod)
         {
@@ -136,8 +136,8 @@ namespace SteganoTool
         private static double[,] GenerateSet(Complex c, int width, int height)
         {
             double[,] fractal = new double[width, height];
-            double xMin = -1.5, xMax = 1.5;
-            double yMin = -1.5, yMax = 1.5;
+            double xMin = -1.2, xMax = 1.2;
+            double yMin = -1.2, yMax = 1.2;
 
             Parallel.For(0, width, x =>
             {
@@ -170,6 +170,33 @@ namespace SteganoTool
             });
 
             return fractal;
+        }
+
+        internal static bool CheckIterations(Complex c, int width, int height, int samples = 200)
+        {
+            double xMin = -1.2, xMax = 1.2;
+            double yMin = -1.2, yMax = 1.2;
+            Random rng = new Random();
+            double totalIterations = 0;
+
+            for (int i = 0; i < samples; i++)
+            {
+                int x = rng.Next(width);
+                int y = rng.Next(height);
+
+                double zx = xMin + (xMax - xMin) * x / (width - 1);
+                double zy = yMin + (yMax - yMin) * y / (height - 1);
+                Complex z = new Complex(zx, zy);
+
+                int iteration = 0;
+                while (iteration < MaxIterations && z.Magnitude < EscapeRadius)
+                {
+                    z = z * z + c;
+                    iteration++;
+                }
+                totalIterations += iteration;
+            }
+            return totalIterations < MaxIterations * 0.9;
         }
 
         private static Color[] ColorChoise(string method)

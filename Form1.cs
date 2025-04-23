@@ -116,6 +116,13 @@ namespace SteganoTool
 
                 keyC = ProcessKey.GenerateFractalModifier(encrypted);
 
+                while (ProcessJulia.CheckIterations(keyC, width, height) == false)
+                {
+                    (EKey, EIv) = ProcessKey.Generate();
+                    encrypted = ProcessKey.EncryptWithAes(Encoding.UTF8.GetBytes(EText), EKey, EIv);
+                    keyC = ProcessKey.GenerateFractalModifier(encrypted);
+                }
+
                 Bitmap bmp = ProcessJulia.GenerateJulia(keyC, width, height, comboBox1.Text);
 
                 EBmp = ProcessJulia.EmbedDataLSB(bmp, encrypted);

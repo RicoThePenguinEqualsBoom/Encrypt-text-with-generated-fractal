@@ -163,7 +163,7 @@ namespace SteganoTool
             ImageW.Name = "ImageW";
             ImageW.Size = new Size(100, 23);
             ImageW.TabIndex = 11;
-            ImageW.Text = "500";
+            ImageW.Text = "1000";
             ImageW.LostFocus += ImageW_LostFocus;
             // 
             // ImageH
@@ -172,7 +172,7 @@ namespace SteganoTool
             ImageH.Name = "ImageH";
             ImageH.Size = new Size(100, 23);
             ImageH.TabIndex = 10;
-            ImageH.Text = "500";
+            ImageH.Text = "1000";
             ImageH.LostFocus += ImageH_LostFocus;
             // 
             // label3
