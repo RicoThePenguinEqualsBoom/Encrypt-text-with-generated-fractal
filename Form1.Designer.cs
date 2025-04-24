@@ -115,7 +115,7 @@ namespace SteganoTool
             // comboBox1
             // 
             comboBox1.FormattingEnabled = true;
-            comboBox1.Items.AddRange(new object[] { "Classic", "Rainbow" });
+            comboBox1.Items.AddRange(new object[] { "Classic", "Aurora", "Rainbow" });
             comboBox1.Location = new Point(731, 226);
             comboBox1.Name = "comboBox1";
             comboBox1.Size = new Size(121, 23);

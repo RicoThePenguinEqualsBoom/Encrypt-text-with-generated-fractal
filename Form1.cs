@@ -1,12 +1,6 @@
-using System;
-using System.Drawing;
 using System.Drawing.Imaging;
-using System.Windows.Forms;
-using System.IO;
 using System.Numerics;
-using System.Security.Cryptography;
 using System.Text;
-using static System.Windows.Forms.VisualStyles.VisualStyleElement;
 
 namespace SteganoTool
 {
@@ -38,7 +32,7 @@ namespace SteganoTool
             FileName = "output.png"
         };
 
-        ImageFormat pngFormat = ImageFormat.Png;
+        readonly ImageFormat pngFormat = ImageFormat.Png;
 
         private string EText;
         private string DText;
@@ -118,6 +112,7 @@ namespace SteganoTool
 
                 while (ProcessJulia.CheckIterations(keyC, width, height) == false)
                 {
+                    MessageBox.Show("too big");
                     (EKey, EIv) = ProcessKey.Generate();
                     encrypted = ProcessKey.EncryptWithAes(Encoding.UTF8.GetBytes(EText), EKey, EIv);
                     keyC = ProcessKey.GenerateFractalModifier(encrypted);
@@ -125,7 +120,7 @@ namespace SteganoTool
 
                 Bitmap bmp = ProcessJulia.GenerateJulia(keyC, width, height, comboBox1.Text);
 
-                EBmp = ProcessJulia.EmbedDataLSB(bmp, encrypted);
+                EBmp = ProcessJulia.EmbedLSB(bmp, encrypted);
 
                 key = ProcessKey.ComposeKeyString(EKey, EIv, keyC);
 
@@ -146,7 +141,7 @@ namespace SteganoTool
 
                 (DKey, DIv, DReal, DImag) = ProcessKey.ParseKeyString(key);
 
-                decrypted = ProcessJulia.ExtractDataLSB(DBmp);
+                decrypted = ProcessJulia.ExtractLSB(DBmp);
 
                 DText = Encoding.UTF8.GetString(ProcessKey.DecryptWithAes(decrypted, DKey, DIv));
 

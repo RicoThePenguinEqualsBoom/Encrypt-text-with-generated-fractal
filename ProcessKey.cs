@@ -1,10 +1,6 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using System.Globalization;
 using System.Numerics;
 using System.Security.Cryptography;
-using System.Security.Cryptography.Xml;
-using System.Text;
-using System.Windows.Forms;
 
 namespace SteganoTool
 {
@@ -32,9 +28,9 @@ namespace SteganoTool
             {
                 aes.Key = key;
                 aes.IV = iv;
-                using (var encryptor = aes.CreateEncryptor())
-                using (var ms = new System.IO.MemoryStream())
-                using (var cs = new CryptoStream(ms, encryptor, CryptoStreamMode.Write))
+                using var encryptor = aes.CreateEncryptor();
+                using var ms = new System.IO.MemoryStream();
+                using var cs = new CryptoStream(ms, encryptor, CryptoStreamMode.Write);
                 {
                     cs.Write(data, 0, data.Length);
                     cs.FlushFinalBlock();
@@ -49,9 +45,9 @@ namespace SteganoTool
             {
                 aes.Key = key;
                 aes.IV = iv;
-                using (var decryptor = aes.CreateDecryptor())
-                using (var ms = new System.IO.MemoryStream())
-                using (var cs = new CryptoStream(ms, decryptor, CryptoStreamMode.Write))
+                using var decryptor = aes.CreateDecryptor();
+                using var ms = new MemoryStream();
+                using var cs = new CryptoStream(ms, decryptor, CryptoStreamMode.Write);
                 {
                     cs.Write(encrypted, 0, encrypted.Length);
                     cs.FlushFinalBlock();
@@ -62,22 +58,19 @@ namespace SteganoTool
 
         internal static Complex GenerateFractalModifier(byte[] encrypted)
         {
-            using (var sha256 = SHA256.Create())
-            {
-                var hash = sha256.ComputeHash(encrypted);
-                ulong realBits = BitConverter.ToUInt64(hash, 0);
-                ulong imagBits = BitConverter.ToUInt64(hash, 8);
+            var hash = SHA256.HashData(encrypted);
+            ulong realBits = BitConverter.ToUInt64(hash, 0);
+            ulong imagBits = BitConverter.ToUInt64(hash, 8);
 
-                double realNorm = realBits / (double)ulong.MaxValue;
-                double imagNorm = imagBits / (double)ulong.MaxValue;
+            double realNorm = realBits / (double)ulong.MaxValue;
+            double imagNorm = imagBits / (double)ulong.MaxValue;
 
-                double range = 1.2;
-                double real = (realNorm * 2 - 1) * range;
-                double imag = (imagNorm * 2 - 1) * range;
+            double range = 1.5;
+            double real = (realNorm * 2 - 1) * range;
+            double imag = (imagNorm * 2 - 1) * range;
 
-                Complex c = new Complex(real, imag);
-                return c;
-            }
+            Complex c = new(real, imag);
+            return c;
         }
 
         internal static string ComposeKeyString(byte[] key, byte[] iv, Complex c)
@@ -86,8 +79,8 @@ namespace SteganoTool
             {
                 Convert.ToBase64String(key),
                 Convert.ToBase64String(iv),
-                c.Real.ToString("F15"),
-                c.Imaginary.ToString("F15")
+                c.Real.ToString("F15", CultureInfo.InvariantCulture),
+                c.Imaginary.ToString("F15", CultureInfo.InvariantCulture)
             };
             return string.Join("|", parts);
         }
@@ -101,8 +94,8 @@ namespace SteganoTool
             return (
                 Convert.FromBase64String(parts[0]),
                 Convert.FromBase64String(parts[1]),
-                double.Parse(parts[2]),
-                double.Parse(parts[3])
+                double.Parse(parts[2], CultureInfo.InvariantCulture),
+                double.Parse(parts[3], CultureInfo.InvariantCulture)
             );
         }
     }
