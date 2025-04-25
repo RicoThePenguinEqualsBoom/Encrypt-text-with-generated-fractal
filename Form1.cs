@@ -8,7 +8,7 @@ namespace SteganoTool
     {
         private void Form1_Load(object sender, EventArgs e)
         {
-            comboBox1.SelectedItem = "Classic";
+            gBox.SelectedItem = "Classic";
         }
 
         internal Form1()
@@ -53,6 +53,7 @@ namespace SteganoTool
         private int height;
         private int width;
 
+        private double EscapeRadius = 2.0;
         private double DReal;
         private double DImag;
         #endregion
@@ -110,17 +111,16 @@ namespace SteganoTool
 
                 keyC = ProcessKey.GenerateFractalModifier(encrypted);
 
-                while (ProcessJulia.CheckIterations(keyC, width, height) == false)
+                while (ProcessFractal.CheckIterations(keyC, width, height, EscapeRadius) == false)
                 {
-                    MessageBox.Show("too big");
                     (EKey, EIv) = ProcessKey.Generate();
                     encrypted = ProcessKey.EncryptWithAes(Encoding.UTF8.GetBytes(EText), EKey, EIv);
                     keyC = ProcessKey.GenerateFractalModifier(encrypted);
                 }
 
-                Bitmap bmp = ProcessJulia.GenerateJulia(keyC, width, height, comboBox1.Text);
+                Bitmap bmp = ProcessFractal.GenerateFractal(keyC, width, height, EscapeRadius, gBox.Text, fBox.Text);
 
-                EBmp = ProcessJulia.EmbedLSB(bmp, encrypted);
+                EBmp = ProcessFractal.EmbedLSB(bmp, encrypted);
 
                 key = ProcessKey.ComposeKeyString(EKey, EIv, keyC);
 
@@ -141,7 +141,7 @@ namespace SteganoTool
 
                 (DKey, DIv, DReal, DImag) = ProcessKey.ParseKeyString(key);
 
-                decrypted = ProcessJulia.ExtractLSB(DBmp);
+                decrypted = ProcessFractal.ExtractLSB(DBmp);
 
                 DText = Encoding.UTF8.GetString(ProcessKey.DecryptWithAes(decrypted, DKey, DIv));
 
@@ -200,6 +200,22 @@ namespace SteganoTool
             if (tabControl1.SelectedTab == tabControl1.TabPages[1])
             {
                 MessageBox.Show("Warning!!! Wrong input of decryption parameters will result in BSOD");
+            }
+        }
+
+        private void noCircle_CheckedChanged(object sender, EventArgs e)
+        {
+            if (noCircle.Checked == true)
+            {
+                EscapeRadius = 2.0;
+            }
+        }
+
+        private void Circle_CheckedChanged(object sender, EventArgs e)
+        {
+            if (Circle.Checked == true)
+            {
+                EscapeRadius = 1.0;
             }
         }
     }
