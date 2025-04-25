@@ -9,6 +9,7 @@ namespace SteganoTool
         private void Form1_Load(object sender, EventArgs e)
         {
             gBox.SelectedItem = "Classic";
+            fBox.SelectedItem = "Julia";
         }
 
         internal Form1()
@@ -37,6 +38,7 @@ namespace SteganoTool
         private string EText;
         private string DText;
         private string key;
+        private string DiOrCo = "D";
 
         private Bitmap EBmp;
         private Bitmap DBmp;
@@ -118,7 +120,7 @@ namespace SteganoTool
                     keyC = ProcessKey.GenerateFractalModifier(encrypted);
                 }
 
-                Bitmap bmp = ProcessFractal.GenerateFractal(keyC, width, height, EscapeRadius, gBox.Text, fBox.Text);
+                Bitmap bmp = ProcessFractal.GenerateFractal(keyC, width, height, EscapeRadius, gBox.Text, fBox.Text, DiOrCo);
 
                 EBmp = ProcessFractal.EmbedLSB(bmp, encrypted);
 
@@ -203,19 +205,33 @@ namespace SteganoTool
             }
         }
 
-        private void noCircle_CheckedChanged(object sender, EventArgs e)
-        {
-            if (noCircle.Checked == true)
-            {
-                EscapeRadius = 2.0;
-            }
-        }
-
         private void Circle_CheckedChanged(object sender, EventArgs e)
         {
             if (Circle.Checked == true)
             {
                 EscapeRadius = 1.0;
+            }
+            else
+            {
+                EscapeRadius = 2.0;
+            }
+        }
+
+        private void fBox_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            if (fBox.SelectedIndex > 0)
+            {
+                DiOrCo = "C";
+                gBox.Items.Clear();
+                gBox.Items.Add("RGB");
+                gBox.SelectedItem = "RGB";
+                gBox.Items.Add("CYM");
+                noCircle.Enabled = false;
+                Circle.Enabled = false;
+            }
+            else
+            {
+                gBox.Items.Remove("RGB");
             }
         }
     }

@@ -11,7 +11,7 @@ namespace SteganoTool
         private const double xMin = -1.5, yMin = -1.5;
         private const double xMax = 1.5, yMax = 1.5;
 
-        private static readonly Complex[] roots =
+        private static readonly Complex[] RootBase =
         [
             new(1, 0),
             new(-0.5, Math.Sqrt(3)/2),
@@ -42,60 +42,64 @@ namespace SteganoTool
             return z * z + c;
         }
 
-        private static bool HasConverged(Complex z)
-        {
-            foreach (var root in roots)
-                if ((z - root).Magnitude < Epsilon)
-                    return true;
-            return false;
-        }
-
         internal static Bitmap GenerateFractal(Complex c, int width, int height, double escapeRadius, string colorMethod,
-            string fractalType)
+            string fractalType, string vergeType)
         {
             FractalFunc func;
             Color[] palette;
             double[,] fractal;
+            int[,] roots = {};
+            bool rootFillMethod = vergeType == "C";
 
             switch (fractalType)
             {
                 case "Julia":
                     func = JuliaFunc;
-                    palette = ColorChoice(colorMethod);
                     fractal = GenerateDivergingSet(c, width, height, escapeRadius, func);
+                    palette = ColorChoiceD(colorMethod);
                     break;
                 case "Newton":
                     func = NewtonFunc;
-                    palette = ColorChoice(colorMethod);
-                    fractal = GenerateConvergingSet(c, width, height, func);
+                    (fractal, roots) = GenerateConvergingSet(c, width, height, func);
+                    palette = ColorChoiceC(colorMethod);
                     break;
                 case "Nova":
                     func = NovaFunc;
-                    palette = ColorChoice(colorMethod);
-                    fractal = GenerateConvergingSet(c, width, height, func);
+                    (fractal, roots) = GenerateConvergingSet(c, width, height, func);
+                    palette = ColorChoiceC(colorMethod);
                     break;
                 default:
                     throw new ArgumentException("no selected Fractal type");
             }
-            double maxVal = fractal.Cast<double>().Max();
 
             Bitmap bmp = new (width, height, PixelFormat.Format32bppArgb);
             BitmapData bmpData = bmp.LockBits(new Rectangle(0, 0, width, height), ImageLockMode.WriteOnly,
                 PixelFormat.Format32bppArgb);
 
+            int[] pixels = new int[width * height];
+            double maxVal = fractal.Cast<double>().Max();
+
             try
             {
-                int[] pixels = new int[width * height];
-
                 Parallel.For(0, height, y =>
                 {
                     for (int x = 0; x < width; x++)
                     {
                         double norm = Math.Pow(fractal[x, y] / maxVal, 0.7);
-                        int colorIdx = (int)(norm * (palette.Length - 1));
-                        colorIdx = Math.Min(palette.Length - 1, Math.Max(0, colorIdx));
-                        Color color = palette[colorIdx];
-                        pixels[y * width + x] = color.ToArgb();
+                        Color color;
+
+                        if (rootFillMethod)
+                        {
+                            int rootIdx = roots[x, y] % palette.Length;
+                            color = BlendWithWhite(palette[rootIdx], norm);
+                        }
+                        else
+                        {
+                            int colorIdx = (int)(norm * (palette.Length - 1));
+                            colorIdx = Math.Clamp(colorIdx, 0, palette.Length - 1);
+                            color = palette[colorIdx];
+                            pixels[y * width + x] = color.ToArgb();
+                        }
                     }
                 });
 
@@ -146,9 +150,10 @@ namespace SteganoTool
             return fractal;
         }
 
-        private static double[,] GenerateConvergingSet(Complex c, int width, int height, FractalFunc func)
+        private static (double[,] fractal, int[,] rootIdx) GenerateConvergingSet(Complex c, int width, int height, FractalFunc func)
         {
             double[,] fractal = new double[width, height];
+            int[,] rootIdx = new int[width, height];
 
             Parallel.For(0, height, y =>
             {
@@ -163,6 +168,17 @@ namespace SteganoTool
                     {
                         z = func(z, c);
                         iteration++;
+                    }
+
+                    double minDist = double.MaxValue;
+                    for (int i = 0; i < RootBase.Length; i++)
+                    {
+                        double dist = (z - RootBase[i]).Magnitude;
+                        if (dist < minDist)
+                        {
+                            minDist = dist;
+                            rootIdx[x, y] = i;
+                        }
                     }
 
                     double smoothValue;
@@ -180,7 +196,7 @@ namespace SteganoTool
                 }
             });
 
-            return fractal;
+            return (fractal, rootIdx);
         }
 
         internal static Bitmap EmbedLSB(Bitmap bmp, byte[] data)
@@ -261,6 +277,14 @@ namespace SteganoTool
             return result;
         }
 
+        private static bool HasConverged(Complex z)
+        {
+            foreach (var root in RootBase)
+                if ((z - root).Magnitude < Epsilon)
+                    return true;
+            return false;
+        }
+
         internal static bool CheckIterations(Complex c, int width, int height, double escapeRadius, int samples = 250)
         {
             Random rng = new ();
@@ -286,7 +310,7 @@ namespace SteganoTool
             return totalIterations <= (double)(MaxIterations * 0.99999999999999999999999999999m);
         }
 
-        private static Color[] ColorChoice(string method)
+        private static Color[] ColorChoiceD(string method)
         {
             return method switch
             {
@@ -294,6 +318,16 @@ namespace SteganoTool
                 "Rainbow" => RainbowFromHSV(),
                 "Aurora" => Aurora(),
                 _ => ClassicSet()
+            };
+        }
+
+        private static Color[] ColorChoiceC(string method)
+        {
+            return method switch
+            {
+                "RGB" => RGB(),
+                "CYM" => CYM(),
+                _ => RGB()
             };
         }
 
@@ -396,6 +430,34 @@ namespace SteganoTool
             }
 
             return palette;
+        }
+
+        private static Color[] RGB()
+        {
+            return
+            [
+                Color.Red,
+                Color.Green,
+                Color.Blue
+            ];
+        }
+
+        private static Color[] CYM()
+        {
+            return
+            [
+                Color.Cyan,
+                Color.Yellow,
+                Color.Magenta
+            ];
+        }
+
+        private static Color BlendWithWhite(Color c, double t)
+        {
+            int r = (int)(c.R + (255 - c.R) * t);
+            int g = (int)(c.G + (255 - c.G) * t);
+            int b = (int)(c.B + (255 - c.B) * t);
+            return Color.FromArgb(r, g, b);
         }
     }
 }

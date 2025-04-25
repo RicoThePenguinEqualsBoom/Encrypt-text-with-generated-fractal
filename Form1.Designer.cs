@@ -34,6 +34,8 @@ namespace SteganoTool
         {
             tabControl1 = new TabControl();
             tabPage1 = new TabPage();
+            label11 = new Label();
+            fBox = new ComboBox();
             Circle = new RadioButton();
             noCircle = new RadioButton();
             label2 = new Label();
@@ -62,8 +64,6 @@ namespace SteganoTool
             inputBtn = new Button();
             outputText = new RichTextBox();
             inputImage = new PictureBox();
-            fBox = new ComboBox();
-            label11 = new Label();
             tabControl1.SuspendLayout();
             tabPage1.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)outputImage).BeginInit();
@@ -111,6 +111,25 @@ namespace SteganoTool
             tabPage1.TabIndex = 0;
             tabPage1.Text = "Encrypt";
             // 
+            // label11
+            // 
+            label11.AutoSize = true;
+            label11.Location = new Point(437, 249);
+            label11.Name = "label11";
+            label11.Size = new Size(68, 15);
+            label11.TabIndex = 21;
+            label11.Text = "Fractal type";
+            // 
+            // fBox
+            // 
+            fBox.FormattingEnabled = true;
+            fBox.Items.AddRange(new object[] { "Julia", "Newton", "Nova" });
+            fBox.Location = new Point(437, 267);
+            fBox.Name = "fBox";
+            fBox.Size = new Size(135, 23);
+            fBox.TabIndex = 20;
+            fBox.SelectedIndexChanged += fBox_SelectedIndexChanged;
+            // 
             // Circle
             // 
             Circle.AutoSize = true;
@@ -133,7 +152,6 @@ namespace SteganoTool
             noCircle.TabStop = true;
             noCircle.Text = "No circle";
             noCircle.UseVisualStyleBackColor = true;
-            noCircle.CheckedChanged += noCircle_CheckedChanged;
             // 
             // label2
             // 
@@ -383,24 +401,6 @@ namespace SteganoTool
             inputImage.SizeMode = PictureBoxSizeMode.Zoom;
             inputImage.TabIndex = 0;
             inputImage.TabStop = false;
-            // 
-            // fBox
-            // 
-            fBox.FormattingEnabled = true;
-            fBox.Items.AddRange(new object[] { "Julia", "Newton", "Nova" });
-            fBox.Location = new Point(437, 267);
-            fBox.Name = "fBox";
-            fBox.Size = new Size(135, 23);
-            fBox.TabIndex = 20;
-            // 
-            // label11
-            // 
-            label11.AutoSize = true;
-            label11.Location = new Point(437, 249);
-            label11.Name = "label11";
-            label11.Size = new Size(68, 15);
-            label11.TabIndex = 21;
-            label11.Text = "Fractal type";
             // 
             // Form1
             // 
