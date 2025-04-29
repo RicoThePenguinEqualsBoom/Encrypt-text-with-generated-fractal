@@ -65,9 +65,10 @@ namespace SteganoTool
             double realNorm = realBits / (double)ulong.MaxValue;
             double imagNorm = imagBits / (double)ulong.MaxValue;
 
-            double range = 1.5;
-            double real = (realNorm * 2 - 1) * range;
-            double imag = (imagNorm * 2 - 1) * range;
+            double angle = realNorm * 2 * Math.PI;
+            double radius = 0.75 + imagNorm * 0.25;
+            double real = Math.Cos(angle) * radius;
+            double imag = Math.Sin(angle) * radius;
 
             Complex c = new(real, imag);
             return c;

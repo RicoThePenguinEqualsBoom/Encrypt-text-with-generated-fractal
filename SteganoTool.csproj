@@ -9,4 +9,13 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
+  <ItemGroup>
+    <Compile Remove="NewtonPoly.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ILGPU" Version="1.5.2" />
+    <PackageReference Include="ILGPU.Algorithms" Version="1.5.2" />
+  </ItemGroup>
+
 </Project>

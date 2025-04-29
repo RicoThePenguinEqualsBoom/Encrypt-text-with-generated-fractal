@@ -1,6 +1,12 @@
 ﻿using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
 using System.Numerics;
+using ILGPU;
+using ILGPU.Algorithms;
+using ILGPU.Runtime;
+using ILGPU.Runtime.Cuda;
+using ILGPU.Runtime.OpenCL;
+using ILGPU.Runtime.CPU;
 
 namespace SteganoTool
 {
@@ -18,106 +24,90 @@ namespace SteganoTool
             new(-0.5, Math.Sqrt(3)/2)
         ];
 
-        private delegate Complex FractalFunc(Complex z, Complex c);
-
-        private static Complex NewtonFunc(Complex z, Complex c)
-        {
-            var fz = Complex.Pow(z, 3) - 1;
-            var dfz = 3 * Complex.Pow(z, 2);
-            if (dfz == Complex.Zero) return z;
-            return z - fz / dfz;
-        }
-
-        private static Complex NovaFunc(Complex z, Complex c)
-        {
-            double alpha = 1.0;
-            var fz = Complex.Pow(z, 3) - 1;
-            var dfz = 3 * Complex.Pow(z, 2);
-            if (dfz == Complex.Zero) return z + c;
-            return z - alpha * (fz / dfz) + c;
-        }
-
-        private static Complex JuliaFunc(Complex z, Complex c)
-        {
-            return z * z + c;
-        }
-
         internal static Bitmap GenerateFractal(Complex c, int width, int height, double escapeRadius, string colorMethod,
             string fractalType, string vergeType)
         {
-            FractalFunc func;
             Color[] palette;
-            double[,] fractal;
             int[,] roots = {};
             bool rootFillMethod = vergeType == "C";
 
+            using var context = Context.CreateDefault();
+            Accelerator accelerator;
+
+            if (context.GetCudaDevices().Count != 0)
+                accelerator = context.CreateCudaAccelerator(0);
+            else if (context.GetCLDevices().Count != 0)
+                accelerator = context.CreateCLAccelerator(0);
+            else accelerator = context.CreateCPUAccelerator(0);
+
+            using var aBuffer = accelerator.Allocate1D<double>(width * height);
+
+            Action<Index1D, ArrayView1D<double, Stride1D.Dense>, double, double, double, int, int, int> aKernel;
+            int whichFractal;
             switch (fractalType)
             {
                 case "Julia":
-                    func = JuliaFunc;
-                    fractal = GenerateDivergingSet(c, width, height, escapeRadius, func);
+                    aKernel = accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView1D<double, Stride1D.Dense>, double, double,
+                        double, int, int, int >(GPU.JuliaKernel);
+                    whichFractal = 0;
                     palette = ColorChoiceD(colorMethod);
                     break;
-                case "Newton":
-                    func = NewtonFunc;
-                    (fractal, roots) = GenerateConvergingSet(c, width, height, func);
+                case "Nova":
+                    aKernel = accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView1D<double, Stride1D.Dense>, double, double,
+                        double, int, int, int>(GPU.JuliaKernel);
+                    whichFractal = 1;
                     palette = ColorChoiceC(colorMethod);
                     break;
-                case "Nova":
-                    func = NovaFunc;
-                    (fractal, roots) = GenerateConvergingSet(c, width, height, func);
+                case "Newton":
+                    aKernel = accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView1D<double, Stride1D.Dense>, double, double,
+                        double, int, int, int>(GPU.JuliaKernel);
+                    whichFractal = 2;
                     palette = ColorChoiceC(colorMethod);
                     break;
                 default:
                     throw new ArgumentException("no selected Fractal type");
             }
 
+            aKernel(width * height, aBuffer.View, c.Real, c.Imaginary, escapeRadius, width, height, whichFractal);
+            accelerator.Synchronize();
+
+            double[] iterations = aBuffer.GetAsArray1D();
+            double maxIt = double.MinValue;
+            foreach (var it in iterations)
+                if (it > maxIt) maxIt = it;
+
             Bitmap bmp = new (width, height, PixelFormat.Format32bppArgb);
             BitmapData bmpData = bmp.LockBits(new Rectangle(0, 0, width, height), ImageLockMode.WriteOnly,
                 PixelFormat.Format32bppArgb);
 
             int[] pixels = new int[width * height];
-            double maxVal = fractal.Cast<double>().Max();
+            Color color;
 
             try
             {
-                Parallel.For(0, height, y =>
+                for (int i = 0; i < iterations.Length; i++)
                 {
-                    for (int x = 0; x < width; x++)
-                    {
-                        double norm = Math.Pow(fractal[x, y] / maxVal, 0.7);
-                        Color color;
-
-                        if (rootFillMethod)
-                        {
-                            int rootIdx = roots[x, y] % palette.Length;
-                            color = BlendWithWhite(palette[rootIdx], norm);
-                        }
-                        else
-                        {
-                            int colorIdx = (int)(norm * (palette.Length - 1));
-                            colorIdx = Math.Clamp(colorIdx, 0, palette.Length - 1);
-                            color = palette[colorIdx];
-                            pixels[y * width + x] = color.ToArgb();
-                        }
-                    }
-                });
-
-                Marshal.Copy(pixels, 0, bmpData.Scan0, pixels.Length);
+                    double norm = maxIt > 0 ? Math.Pow(iterations[i] / maxIt, 0.7) : 0;
+                    int colorIdx = (int)(norm * (palette.Length - 1)) % palette.Length;
+                    colorIdx = Math.Clamp(colorIdx, 0, palette.Length - 1);
+                    color = palette[colorIdx];
+                    pixels[i] = color.ToArgb();
+                }
             }
             finally
             {
+                Marshal.Copy(pixels, 0, bmpData.Scan0, pixels.Length);
                 bmp.UnlockBits(bmpData);
             }
 
             return bmp;
         }
 
-        private static double[,] GenerateDivergingSet(Complex c, int width, int height, double escapeRadius, FractalFunc func)
+        private static double[,] GenerateDivergingSet(Complex c, int width, int height, double escapeRadius)
         {
             double[,] fractal = new double[width, height];
 
-            Parallel.For(0, height, y =>
+            Parallel.For(0, height, new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount - 2 }, y =>
             {
                 for (int x = 0; x < width; x++)
                 {
@@ -126,9 +116,9 @@ namespace SteganoTool
                     Complex z = new (zx, zy);
                     int iteration = 0;
 
-                    while (iteration < MaxIterations && z.Magnitude < escapeRadius)
+                    while (iteration <= MaxIterations && z.Magnitude < escapeRadius)
                     {
-                        z = func(z, c);
+                        z = c;
                         iteration++;
                     }
 
@@ -150,7 +140,7 @@ namespace SteganoTool
             return fractal;
         }
 
-        private static (double[,] fractal, int[,] rootIdx) GenerateConvergingSet(Complex c, int width, int height, FractalFunc func)
+        private static (double[,] fractal, int[,] rootIdx) GenerateConvergingSet(Complex c, int width, int height)
         {
             double[,] fractal = new double[width, height];
             int[,] rootIdx = new int[width, height];
@@ -166,7 +156,7 @@ namespace SteganoTool
 
                     while (iteration < MaxIterations && !HasConverged(z))
                     {
-                        z = func(z, c);
+                        z = c;
                         iteration++;
                     }
 
@@ -289,6 +279,8 @@ namespace SteganoTool
         {
             Random rng = new ();
             double totalIterations = 0;
+            int failures = 0;
+            int maxFailures = (int)(samples * 0.05);
 
             for (int i = 0; i < samples; i++)
             {
@@ -306,8 +298,13 @@ namespace SteganoTool
                     iteration++;
                 }
                 totalIterations += iteration;
+                if (iteration == MaxIterations)
+                    failures++;
             }
-            return totalIterations <= (double)(MaxIterations * 0.99999999999999999999999999999m);
+
+            double avgIterations = totalIterations / samples;
+
+            return failures <= maxFailures && avgIterations < (double)(MaxIterations * 0.99999999999999999999999999999m);
         }
 
         private static Color[] ColorChoiceD(string method)
@@ -315,8 +312,9 @@ namespace SteganoTool
             return method switch
             {
                 "Classic" => ClassicSet(),
-                "Rainbow" => RainbowFromHSV(),
+                "Rainbow" => Rainbow(),
                 "Aurora" => Aurora(),
+                "Scientific" => ScientificVis(),
                 _ => ClassicSet()
             };
         }
@@ -373,9 +371,9 @@ namespace SteganoTool
             return InterpolateColor(stops);
         }
 
-        private static Color[] InterpolateColor(Color[] stops, int steps = 280)
+        private static Color[] InterpolateColor(Color[] stops, int steps = MaxIterations)
         {
-            Color[] palette = new Color[steps];
+            Color[] palette = new Color[steps + 1];
             for (int i = 0; i < steps; i++)
             {
                 double pos = (double)i / (steps - 1) * (stops.Length - 1);
@@ -399,36 +397,52 @@ namespace SteganoTool
             return palette;
         }
 
-        private static Color[] RainbowFromHSV(int steps = 256, double sat = 1.0, double value = 1.0)
+        private static Color[] Rainbow(int steps = MaxIterations)
         {
-            Color[] palette = new Color[steps];
+            Color[] palette = new Color[steps + 1];
             for (int i = 0; i < steps; i++)
             {
-                double hue = (360.0 * i / steps) % 360;
-                if (hue < 0) hue += 360;
-                sat = Math.Clamp(sat, 0, 1);
-                value = Math.Clamp(value, 0, 1);
+                double t = (double)i / (steps - 1);
+                double r = Math.Sin(Math.PI * t);
+                double g = Math.Sin(Math.PI * t + 2 * Math.PI / 3);
+                double b = Math.Sin(Math.PI * t + 4 * Math.PI / 3);
 
-                int hi = Convert.ToInt32(Math.Floor(hue / 60)) % 6;
-                double f = hue / 60 - Math.Floor(hue / 60);
-
-                value *= 255;
-                int v = (int)value;
-                int p = (int)(value * (1 - sat));
-                int q = (int)(value * (1 - f * sat));
-                int t = (int)(value * (1 - (1 - f) * sat));
-
-                palette[i] = hi switch
-                {
-                    0 => Color.FromArgb(255, v, t, p),
-                    1 => Color.FromArgb(255, q, v, p),
-                    2 => Color.FromArgb(255, p, v, t),
-                    3 => Color.FromArgb(255, p, q, v),
-                    4 => Color.FromArgb(255, t, p, v),
-                    _ => Color.FromArgb(255, v, p, q),
-                };
+                palette[i] = Color.FromArgb(
+                    255,
+                    (int)(127.5 * (r + 1)),
+                    (int)(127.5 * (g + 1)),
+                    (int)(127.5 * (b + 1))
+                );
             }
+            return palette;
+        }
 
+        private static Color[] ScientificVis(int steps = MaxIterations, double start = 0.5, double hue = 1.0, double rotations = -1.5,
+            double gamma = 1.0)
+        {
+            Color[] palette = new Color[steps + 1];
+            for (int i = 0; i < steps; i++)
+            {
+                double t = (double)i / (steps - 1);
+                double angle = 2 * Math.PI * (start / 3.0 + rotations * t);
+                double fract = Math.Pow(t, gamma);
+                double amp = hue * fract * (1 - fract) / 2;
+
+                double r = fract + amp * (-0.14861 * Math.Cos(angle) + 1.78277 * Math.Sin(angle));
+                double g = fract + amp * (-0.29227 * Math.Cos(angle) - 0.90649 * Math.Sin(angle));
+                double b = fract + amp * (1.97294 * Math.Cos(angle));
+
+                r = Math.Clamp(r, 0, 1);
+                g = Math.Clamp(g, 0, 1);
+                b = Math.Clamp(b, 0, 1);
+
+                palette[i] = Color.FromArgb(
+                    255,
+                    (int)(255 * r),
+                    (int)(255 * g),
+                    (int)(255 * b)
+                );
+            }
             return palette;
         }
 

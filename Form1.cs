@@ -115,6 +115,7 @@ namespace SteganoTool
 
                 while (ProcessFractal.CheckIterations(keyC, width, height, EscapeRadius) == false)
                 {
+                    MessageBox.Show("La clé est incorrecte ou l'image ne contient pas de message caché.");
                     (EKey, EIv) = ProcessKey.Generate();
                     encrypted = ProcessKey.EncryptWithAes(Encoding.UTF8.GetBytes(EText), EKey, EIv);
                     keyC = ProcessKey.GenerateFractalModifier(encrypted);

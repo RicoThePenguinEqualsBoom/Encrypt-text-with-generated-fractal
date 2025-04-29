@@ -122,8 +122,10 @@ namespace SteganoTool
             // 
             // fBox
             // 
+            fBox.DropDownStyle = ComboBoxStyle.DropDownList;
+            fBox.Enabled = false;
             fBox.FormattingEnabled = true;
-            fBox.Items.AddRange(new object[] { "Julia", "Newton", "Nova" });
+            fBox.Items.AddRange(new object[] { "Julia" });
             fBox.Location = new Point(437, 267);
             fBox.Name = "fBox";
             fBox.Size = new Size(135, 23);
@@ -164,8 +166,9 @@ namespace SteganoTool
             // 
             // gBox
             // 
+            gBox.DropDownStyle = ComboBoxStyle.DropDownList;
             gBox.FormattingEnabled = true;
-            gBox.Items.AddRange(new object[] { "Classic", "Aurora", "Rainbow" });
+            gBox.Items.AddRange(new object[] { "Classic", "Aurora", "Rainbow", "Scientific" });
             gBox.Location = new Point(722, 267);
             gBox.Name = "gBox";
             gBox.Size = new Size(121, 23);
