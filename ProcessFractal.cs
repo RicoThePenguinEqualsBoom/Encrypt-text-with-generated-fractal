@@ -3,11 +3,13 @@ using System.Runtime.InteropServices;
 using System.Numerics;
 using ILGPU;
 using ILGPU.Algorithms;
+using ILGPU.Algorithms.ScanReduceOperations;
 using ILGPU.Runtime;
 using ILGPU.Runtime.Cuda;
 using ILGPU.Runtime.OpenCL;
 using ILGPU.Runtime.CPU;
 using System;
+using ILGPU.IR.Types;
 
 namespace SteganoTool
 {
@@ -15,6 +17,7 @@ namespace SteganoTool
     {
         private const double Epsilon = 1e-6;
         private const int MaxIterations = 200_000;
+        private const int ChunkSize = 1024;
         private const double xMin = -1.5, yMin = -1.5;
         private const double xMax = 1.5, yMax = 1.5;
 
@@ -84,8 +87,17 @@ namespace SteganoTool
             setKernel(extent, setBuffer.View, c.Real, c.Imaginary, escapeRadius, width, height, whichFractal);
             accelerator.Synchronize();
 
-            double[] iterations = setBuffer.GetAsArray1D();
-            double maxIt = iterations.Max();
+            int numChunks = (extent + ChunkSize - 1) / ChunkSize;
+
+            using var partialMax = accelerator.Allocate1D<double>(numChunks);
+
+            var redKernel = accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView1D<double, Stride1D.Dense>,
+                ArrayView1D<double, Stride1D.Dense>, int >(GPU.ReductionKernel);
+
+            redKernel(numChunks, setBuffer.View, partialMax.View, extent);
+            accelerator.Synchronize();
+
+            double maxIt = partialMax.GetAsArray1D().Max();
 
             palKernel(extent, setBuffer.View, maxIt, palBuffer.View, colBuffer.View);
             accelerator.Synchronize();
@@ -96,13 +108,20 @@ namespace SteganoTool
             BitmapData bmpData = bmp.LockBits(new Rectangle(0, 0, width, height), ImageLockMode.WriteOnly,
                 PixelFormat.Format32bppArgb);
 
-            try
+            unsafe
             {
-                Marshal.Copy(pixels, 0, bmpData.Scan0, pixels.Length);
-            }
-            finally
-            {
-                bmp.UnlockBits(bmpData);
+                try
+                {
+                    var destBytes = new Span<byte>((void*)bmpData.Scan0, pixels.Length * sizeof(int));
+
+                    var srcBytes = MemoryMarshal.AsBytes<int>(pixels);
+
+                    srcBytes.CopyTo(destBytes);
+                }
+                finally
+                {
+                    bmp.UnlockBits(bmpData);
+                }
             }
 
             return bmp;

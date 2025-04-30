@@ -19,6 +19,7 @@ namespace SteganoTool
     {
         private const double Epsilon = 1e-6f;
         private const int MaxIterations = 200_000;
+        private const int ChunkSize = 1024;
         private const double xMin = -1.5f, yMin = -1.5f;
         private const double xMax = 1.5f, yMax = 1.5f;
 
@@ -80,6 +81,19 @@ namespace SteganoTool
             double norm = maxIt > 0 ? XMath.Pow(iterations[index] / maxIt, 0.7) : 0.0;
             int colorIdx = XMath.Clamp((int)(norm * (paletteLen - 1)) % paletteLen, 0, paletteLen - 1);
             pixels[index] = palette[colorIdx];
+        }
+
+        internal static void ReductionKernel(Index1D index, ArrayView1D<double, Stride1D.Dense> input,
+            ArrayView1D<double, Stride1D.Dense> partialMax, int length)
+        {
+            int start = index * ChunkSize;
+            int end = XMath.Min(start + ChunkSize, length);
+            double maxVal = double.MinValue;
+            for (int i = start; i < end; i++)
+            {
+                maxVal = XMath.Max(maxVal, input[i]);
+            }
+            partialMax[index] = maxVal;
         }
     }
 }
