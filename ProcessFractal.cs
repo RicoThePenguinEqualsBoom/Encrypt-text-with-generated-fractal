@@ -7,6 +7,7 @@ using ILGPU.Runtime;
 using ILGPU.Runtime.Cuda;
 using ILGPU.Runtime.OpenCL;
 using ILGPU.Runtime.CPU;
+using System;
 
 namespace SteganoTool
 {
@@ -27,7 +28,7 @@ namespace SteganoTool
         internal static Bitmap GenerateFractal(Complex c, int width, int height, double escapeRadius, string colorMethod,
             string fractalType, string vergeType)
         {
-            Color[] palette;
+            int[] palette;
             int[,] roots = {};
             bool rootFillMethod = vergeType == "C";
 
@@ -40,63 +41,67 @@ namespace SteganoTool
                 accelerator = context.CreateCLAccelerator(0);
             else accelerator = context.CreateCPUAccelerator(0);
 
-            using var aBuffer = accelerator.Allocate1D<double>(width * height);
+            var extent = new Index1D(width * height);
+            using var setBuffer = accelerator.Allocate1D<double>(extent);
+            using var colBuffer = accelerator.Allocate1D<int>(extent);
 
-            Action<Index1D, ArrayView1D<double, Stride1D.Dense>, double, double, double, int, int, int> aKernel;
+            Action<Index1D, ArrayView1D<double, Stride1D.Dense>, double, double, double, int, int, int> setKernel;
+            Action<Index1D, ArrayView1D<double, Stride1D.Dense>, double, ArrayView1D<int, Stride1D.Dense>, 
+                ArrayView1D<int, Stride1D.Dense>> palKernel;
             int whichFractal;
             switch (fractalType)
             {
                 case "Julia":
-                    aKernel = accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView1D<double, Stride1D.Dense>, double, double,
-                        double, int, int, int >(GPU.JuliaKernel);
+                    setKernel = accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView1D<double, Stride1D.Dense>,
+                        double, double, double, int, int, int >(GPU.JuliaKernel);
                     whichFractal = 0;
                     palette = ColorChoiceD(colorMethod);
+                    palKernel = accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView1D<double, Stride1D.Dense>,
+                        double, ArrayView1D<int, Stride1D.Dense>, ArrayView1D<int, Stride1D.Dense> >(GPU.ColorKernel);
                     break;
                 case "Nova":
-                    aKernel = accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView1D<double, Stride1D.Dense>, double, double,
-                        double, int, int, int>(GPU.JuliaKernel);
+                    setKernel = accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView1D<double, Stride1D.Dense>,
+                        double, double, double, int, int, int>(GPU.JuliaKernel);
                     whichFractal = 1;
                     palette = ColorChoiceC(colorMethod);
+                    palKernel = accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView1D<double, Stride1D.Dense>,
+                        double, ArrayView1D<int, Stride1D.Dense>, ArrayView1D<int, Stride1D.Dense>>(GPU.ColorKernel);
                     break;
                 case "Newton":
-                    aKernel = accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView1D<double, Stride1D.Dense>, double, double,
-                        double, int, int, int>(GPU.JuliaKernel);
+                    setKernel = accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView1D<double, Stride1D.Dense>,
+                        double, double, double, int, int, int>(GPU.JuliaKernel);
                     whichFractal = 2;
                     palette = ColorChoiceC(colorMethod);
+                    palKernel = accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView1D<double, Stride1D.Dense>,
+                        double, ArrayView1D<int, Stride1D.Dense>, ArrayView1D<int, Stride1D.Dense>>(GPU.ColorKernel);
                     break;
                 default:
                     throw new ArgumentException("no selected Fractal type");
             }
 
-            aKernel(width * height, aBuffer.View, c.Real, c.Imaginary, escapeRadius, width, height, whichFractal);
+            using var palBuffer = accelerator.Allocate1D(palette);
+
+            setKernel(extent, setBuffer.View, c.Real, c.Imaginary, escapeRadius, width, height, whichFractal);
             accelerator.Synchronize();
 
-            double[] iterations = aBuffer.GetAsArray1D();
-            double maxIt = double.MinValue;
-            foreach (var it in iterations)
-                if (it > maxIt) maxIt = it;
+            double[] iterations = setBuffer.GetAsArray1D();
+            double maxIt = iterations.Max();
+
+            palKernel(extent, setBuffer.View, maxIt, palBuffer.View, colBuffer.View);
+            accelerator.Synchronize();
+
+            int[] pixels = colBuffer.GetAsArray1D();
 
             Bitmap bmp = new (width, height, PixelFormat.Format32bppArgb);
             BitmapData bmpData = bmp.LockBits(new Rectangle(0, 0, width, height), ImageLockMode.WriteOnly,
                 PixelFormat.Format32bppArgb);
 
-            int[] pixels = new int[width * height];
-            Color color;
-
             try
             {
-                for (int i = 0; i < iterations.Length; i++)
-                {
-                    double norm = maxIt > 0 ? Math.Pow(iterations[i] / maxIt, 0.7) : 0;
-                    int colorIdx = (int)(norm * (palette.Length - 1)) % palette.Length;
-                    colorIdx = Math.Clamp(colorIdx, 0, palette.Length - 1);
-                    color = palette[colorIdx];
-                    pixels[i] = color.ToArgb();
-                }
+                Marshal.Copy(pixels, 0, bmpData.Scan0, pixels.Length);
             }
             finally
             {
-                Marshal.Copy(pixels, 0, bmpData.Scan0, pixels.Length);
                 bmp.UnlockBits(bmpData);
             }
 
@@ -109,7 +114,7 @@ namespace SteganoTool
 
             Parallel.For(0, height, new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount - 2 }, y =>
             {
-                for (int x = 0; x < width; x++)
+                for (int x = 0; x < width; ++x)
                 {
                     double zx = xMin + (xMax - xMin) * x / (width - 1);
                     double zy = yMin + (yMax - yMin) * y / (height - 1);
@@ -147,7 +152,7 @@ namespace SteganoTool
 
             Parallel.For(0, height, y =>
             {
-                for (int x = 0; x < width; x++)
+                for (int x = 0; x < width; ++x)
                 {
                     double zx = xMin + (xMax - xMin) * x / (width - 1);
                     double zy = yMin + (yMax - yMin) * y / (height - 1);
@@ -161,7 +166,7 @@ namespace SteganoTool
                     }
 
                     double minDist = double.MaxValue;
-                    for (int i = 0; i < RootBase.Length; i++)
+                    for (int i = 0; i < RootBase.Length; ++i)
                     {
                         double dist = (z - RootBase[i]).Magnitude;
                         if (dist < minDist)
@@ -213,7 +218,7 @@ namespace SteganoTool
             Marshal.Copy(bmpData.Scan0, pixelData, 0, bytes);
 
             int totalBits = fullData.Length * 8;
-            for (int i = 0; i < pixelData.Length && i < totalBits; i++)
+            for (int i = 0; i < pixelData.Length && i < totalBits; ++i)
             {
                 int byteIdx = i / 8;
                 int bitIdx = 7 - (i % 8);
@@ -244,7 +249,7 @@ namespace SteganoTool
             byte[] buffer = new byte[maxBytes];
             int dataLen = -1;
 
-            for (int i = 0; i < pixelData.Length && (dataLen == -1 || i < (dataLen + 4) * 8); i++)
+            for (int i = 0; i < pixelData.Length && (dataLen == -1 || i < (dataLen + 4) * 8); ++i)
             {
                 int byteIdx = i / 8;
                 int bitIdx = 7 - (i % 8);
@@ -282,7 +287,7 @@ namespace SteganoTool
             int failures = 0;
             int maxFailures = (int)(samples * 0.05);
 
-            for (int i = 0; i < samples; i++)
+            for (int i = 0; i < samples; ++i)
             {
                 int x = rng.Next(width);
                 int y = rng.Next(height);
@@ -307,7 +312,7 @@ namespace SteganoTool
             return failures <= maxFailures && avgIterations < (double)(MaxIterations * 0.99999999999999999999999999999m);
         }
 
-        private static Color[] ColorChoiceD(string method)
+        private static int[] ColorChoiceD(string method)
         {
             return method switch
             {
@@ -315,21 +320,21 @@ namespace SteganoTool
                 "Rainbow" => Rainbow(),
                 "Aurora" => Aurora(),
                 "Scientific" => ScientificVis(),
-                _ => ClassicSet()
+                _ => throw new ArgumentException("Invalid color method")
             };
         }
 
-        private static Color[] ColorChoiceC(string method)
+        private static int[] ColorChoiceC(string method)
         {
             return method switch
             {
                 "RGB" => RGB(),
                 "CYM" => CYM(),
-                _ => RGB()
+                _ => throw new ArgumentException("Invalid color method")
             };
         }
 
-        private static Color[] ClassicSet()
+        private static int[] ClassicSet()
         {
             Color[] stops =
             [
@@ -353,7 +358,7 @@ namespace SteganoTool
             return InterpolateColor(stops);
         }
 
-        private static Color[] Aurora()
+        private static int[] Aurora()
         {
             Color[] stops =
             [
@@ -371,10 +376,10 @@ namespace SteganoTool
             return InterpolateColor(stops);
         }
 
-        private static Color[] InterpolateColor(Color[] stops, int steps = MaxIterations)
+        private static int[] InterpolateColor(Color[] stops, int steps = MaxIterations)
         {
-            Color[] palette = new Color[steps + 1];
-            for (int i = 0; i < steps; i++)
+            int[] palette = new int[steps + 1];
+            for (int i = 0; i < steps; ++i)
             {
                 double pos = (double)i / (steps - 1) * (stops.Length - 1);
                 int idx = (int)pos;
@@ -382,7 +387,7 @@ namespace SteganoTool
 
                 if (idx >= stops.Length - 1)
                 {
-                    palette[i] = stops[^1];
+                    palette[i] = stops[^1].ToArgb();
                 }
                 else
                 {
@@ -391,16 +396,16 @@ namespace SteganoTool
                     int r = (int)(c1.R + frac * (c2.R - c1.R));
                     int g = (int)(c1.G + frac * (c2.G - c1.G));
                     int b = (int)(c1.B + frac * (c2.B - c1.B));
-                    palette[i] = Color.FromArgb(255, r, g, b);
+                    palette[i] = Color.FromArgb(255, r, g, b).ToArgb();
                 }
             }
             return palette;
         }
 
-        private static Color[] Rainbow(int steps = MaxIterations)
+        private static int[] Rainbow(int steps = MaxIterations)
         {
-            Color[] palette = new Color[steps + 1];
-            for (int i = 0; i < steps; i++)
+            int[] palette = new int[steps + 1];
+            for (int i = 0; i < steps; ++i)
             {
                 double t = (double)i / (steps - 1);
                 double r = Math.Sin(Math.PI * t);
@@ -412,16 +417,16 @@ namespace SteganoTool
                     (int)(127.5 * (r + 1)),
                     (int)(127.5 * (g + 1)),
                     (int)(127.5 * (b + 1))
-                );
+                ).ToArgb();
             }
             return palette;
         }
 
-        private static Color[] ScientificVis(int steps = MaxIterations, double start = 0.5, double hue = 1.0, double rotations = -1.5,
+        private static int[] ScientificVis(int steps = MaxIterations, double start = 0.5, double hue = 1.0, double rotations = -1.5,
             double gamma = 1.0)
         {
-            Color[] palette = new Color[steps + 1];
-            for (int i = 0; i < steps; i++)
+            int[] palette = new int[steps + 1];
+            for (int i = 0; i < steps; ++i)
             {
                 double t = (double)i / (steps - 1);
                 double angle = 2 * Math.PI * (start / 3.0 + rotations * t);
@@ -441,29 +446,47 @@ namespace SteganoTool
                     (int)(255 * r),
                     (int)(255 * g),
                     (int)(255 * b)
-                );
+                ).ToArgb();
             }
             return palette;
         }
 
-        private static Color[] RGB()
+        private static int[] RGB()
         {
-            return
+            Color[] stops =
             [
                 Color.Red,
                 Color.Green,
                 Color.Blue
             ];
+
+            int[] palette = new int[stops.Length];
+
+            for (int i = 0; i < stops.Length; i++)
+            {
+                palette[i] = stops[i].ToArgb();
+            }
+
+            return palette;
         }
 
-        private static Color[] CYM()
+        private static int[] CYM()
         {
-            return
+            Color[] stops =
             [
                 Color.Cyan,
                 Color.Yellow,
                 Color.Magenta
             ];
+
+            int[] palette = new int[stops.Length];
+
+            for (int i = 0; i < stops.Length; i++)
+            {
+                palette[i] = stops[i].ToArgb();
+            }
+
+            return palette;
         }
 
         private static Color BlendWithWhite(Color c, double t)

@@ -1,0 +1,46 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v8.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v8.0": {
+      "ILGPU/1.5.2": {
+        "runtime": {
+          "lib/net7.0/ILGPU.dll": {
+            "assemblyVersion": "1.5.2.0",
+            "fileVersion": "1.5.2.0"
+          }
+        }
+      },
+      "ILGPU.Algorithms/1.5.2": {
+        "dependencies": {
+          "ILGPU": "1.5.2"
+        },
+        "runtime": {
+          "lib/net7.0/ILGPU.Algorithms.dll": {
+            "assemblyVersion": "1.5.2.0",
+            "fileVersion": "1.5.2.0"
+          }
+        }
+      }
+    }
+  },
+  "libraries": {
+    "ILGPU/1.5.2": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-CfoRHmrQ3+zY12Sh5VwdSlq0ZKiXFMeSbX7PXXUCfpf54H2J4ocxyHp7Yi+GtmGSr6vaHymX2tewPKxpu+frnQ==",
+      "path": "ilgpu/1.5.2",
+      "hashPath": "ilgpu.1.5.2.nupkg.sha512"
+    },
+    "ILGPU.Algorithms/1.5.2": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-6FlNW02eBiRajYrJwIx2SKTZJ3C8sSumCVogHZq7KjxUFv6lhvL3iv2EvYxjwDRrPark7MVeDOPFZ9XcuaekUQ==",
+      "path": "ilgpu.algorithms/1.5.2",
+      "hashPath": "ilgpu.algorithms.1.5.2.nupkg.sha512"
+    }
+  }
+}

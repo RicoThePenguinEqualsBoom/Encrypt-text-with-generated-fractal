@@ -11,15 +11,16 @@ using ILGPU.Algorithms.ScanReduceOperations;
 using ILGPU.Runtime.Cuda;
 using ILGPU.Runtime.OpenCL;
 using ILGPU.Runtime.CPU;
+using System.Drawing;
 
 namespace SteganoTool
 {
     internal class GPU : ProcessFractal
     {
-        private const double Epsilon = 1e-6;
+        private const double Epsilon = 1e-6f;
         private const int MaxIterations = 200_000;
-        private const double xMin = -1.5, yMin = -1.5;
-        private const double xMax = 1.5, yMax = 1.5;
+        private const double xMin = -1.5f, yMin = -1.5f;
+        private const double xMax = 1.5f, yMax = 1.5f;
 
         private static (double zx, double zy) NewtonFunc(double zx, double zy, double cReal, double cImag)
         {
@@ -41,10 +42,11 @@ namespace SteganoTool
         internal static void JuliaKernel(Index1D index, ArrayView1D<double, Stride1D.Dense> output, double cReal, double cImag,
             double escapeRadius, int width, int height, int fractalChoice)
         {
-            if (index >= width * height) return;
-
             int x = index % width;
             int y = index / width;
+
+            if (x >= width || y >= height) 
+                return;
 
             double zx = xMin + (xMax - xMin) * x / (width - 1);
             double zy = yMin + (yMax - yMin) * y / (height - 1);
@@ -60,9 +62,9 @@ namespace SteganoTool
 
             if (iteration < MaxIterations)
             {
-                double mod = Math.Sqrt(zx2 * zx2 + zy2 * zy2);
-                double logZn = Math.Log(mod) / Math.Log(2);
-                double nu = Math.Log(logZn) / Math.Log(2);
+                double mod = XMath.Sqrt(zx2 * zx2 + zy2 * zy2);
+                double logZn = XMath.Log(mod) / XMath.Log(2.0f);
+                double nu = XMath.Log(logZn) / XMath.Log(2.0f);
                 output[index] = iteration + 1 - nu;
             }
             else
@@ -71,17 +73,13 @@ namespace SteganoTool
             }
         }
 
-        static void ReductionKernel(ArrayView2D<double, Stride2D.DenseY> input, ArrayView<double> output, int width, int height)
+        internal static void ColorKernel(Index1D index, ArrayView1D<double, Stride1D.Dense> iterations, double maxIt,
+            ArrayView1D<int, Stride1D.Dense> palette, ArrayView1D<int, Stride1D.Dense> pixels)
         {
-            int y = Grid.IdxX;
-            if (y >= height) return;
-            double max = double.MinValue;
-            for (int x = 0; x < width; x++)
-            {
-                double val = input[x, y];
-                max = XMath.Max(max, val);
-            }
-            output[y] = max;
+            int paletteLen = (int)palette.Length;
+            double norm = maxIt > 0 ? XMath.Pow(iterations[index] / maxIt, 0.7) : 0.0;
+            int colorIdx = XMath.Clamp((int)(norm * (paletteLen - 1)) % paletteLen, 0, paletteLen - 1);
+            pixels[index] = palette[colorIdx];
         }
     }
 }
