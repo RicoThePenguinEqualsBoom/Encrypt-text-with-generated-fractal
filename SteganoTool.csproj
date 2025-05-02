@@ -11,6 +11,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Remove="GPU.cs" />
     <Compile Remove="NewtonPoly.cs" />
   </ItemGroup>
 
