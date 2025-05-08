@@ -29,7 +29,7 @@ namespace SteganoTool
                 aes.Key = key;
                 aes.IV = iv;
                 using var encryptor = aes.CreateEncryptor();
-                using var ms = new System.IO.MemoryStream();
+                using var ms = new MemoryStream();
                 using var cs = new CryptoStream(ms, encryptor, CryptoStreamMode.Write);
                 {
                     cs.Write(data, 0, data.Length);

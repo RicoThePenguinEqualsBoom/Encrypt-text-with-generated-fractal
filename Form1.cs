@@ -55,7 +55,7 @@ namespace SteganoTool
         private int height;
         private int width;
 
-        private double EscapeRadius = 2.0;
+        private float EscapeRadius = 2.0f;
         private double DReal;
         private double DImag;
         #endregion
@@ -210,11 +210,11 @@ namespace SteganoTool
         {
             if (Circle.Checked == true)
             {
-                EscapeRadius = 1.0;
+                EscapeRadius = 1.0f;
             }
             else
             {
-                EscapeRadius = 2.0;
+                EscapeRadius = 2.0f;
             }
         }
 
