@@ -51,13 +51,11 @@ namespace SteganoTool
             Action<Index1D, ArrayView1D<double, Stride1D.Dense>, double, double, double, int, int, int> setKernel;
             Action<Index1D, ArrayView1D<double, Stride1D.Dense>, double, ArrayView1D<int, Stride1D.Dense>, 
                 ArrayView1D<int, Stride1D.Dense>> palKernel;
-            int whichFractal;
             switch (fractalType)
             {
                 case "Julia":
                     setKernel = accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView1D<double, Stride1D.Dense>,
                         double, double, double, int, int, int >(GPU.JuliaKernel);
-                    whichFractal = 0;
                     palette = ColorChoiceD(colorMethod);
                     palKernel = accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView1D<double, Stride1D.Dense>,
                         double, ArrayView1D<int, Stride1D.Dense>, ArrayView1D<int, Stride1D.Dense> >(GPU.ColorKernel);
@@ -65,7 +63,6 @@ namespace SteganoTool
                 case "Nova":
                     setKernel = accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView1D<double, Stride1D.Dense>,
                         double, double, double, int, int, int>(GPU.JuliaKernel);
-                    whichFractal = 1;
                     palette = ColorChoiceC(colorMethod);
                     palKernel = accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView1D<double, Stride1D.Dense>,
                         double, ArrayView1D<int, Stride1D.Dense>, ArrayView1D<int, Stride1D.Dense>>(GPU.ColorKernel);
@@ -73,7 +70,6 @@ namespace SteganoTool
                 case "Newton":
                     setKernel = accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView1D<double, Stride1D.Dense>,
                         double, double, double, int, int, int>(GPU.JuliaKernel);
-                    whichFractal = 2;
                     palette = ColorChoiceC(colorMethod);
                     palKernel = accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView1D<double, Stride1D.Dense>,
                         double, ArrayView1D<int, Stride1D.Dense>, ArrayView1D<int, Stride1D.Dense>>(GPU.ColorKernel);
@@ -127,100 +123,9 @@ namespace SteganoTool
             return bmp;
         }
 
-        private static double[,] GenerateDivergingSet(Complex c, int width, int height, double escapeRadius)
-        {
-            double[,] fractal = new double[width, height];
-
-            Parallel.For(0, height, new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount - 2 }, y =>
-            {
-                for (int x = 0; x < width; ++x)
-                {
-                    double zx = xMin + (xMax - xMin) * x / (width - 1);
-                    double zy = yMin + (yMax - yMin) * y / (height - 1);
-                    Complex z = new (zx, zy);
-                    int iteration = 0;
-
-                    while (iteration <= MaxIterations && z.Magnitude < escapeRadius)
-                    {
-                        z = c;
-                        iteration++;
-                    }
-
-                    double smoothValue;
-                    if (iteration < MaxIterations)
-                    {
-                        double logZn = Math.Log(z.Magnitude) / Math.Log(2);
-                        double nu = Math.Log(logZn) / Math.Log(2);
-                        smoothValue = iteration + 1 - nu;
-                    }
-                    else
-                    {
-                        smoothValue = MaxIterations;
-                    }
-                    fractal[x, y] = smoothValue;
-                }
-            });
-
-            return fractal;
-        }
-
-        private static (double[,] fractal, int[,] rootIdx) GenerateConvergingSet(Complex c, int width, int height)
-        {
-            double[,] fractal = new double[width, height];
-            int[,] rootIdx = new int[width, height];
-
-            Parallel.For(0, height, y =>
-            {
-                for (int x = 0; x < width; ++x)
-                {
-                    double zx = xMin + (xMax - xMin) * x / (width - 1);
-                    double zy = yMin + (yMax - yMin) * y / (height - 1);
-                    Complex z = new(zx, zy);
-                    int iteration = 0;
-
-                    while (iteration < MaxIterations && !HasConverged(z))
-                    {
-                        z = c;
-                        iteration++;
-                    }
-
-                    double minDist = double.MaxValue;
-                    for (int i = 0; i < RootBase.Length; ++i)
-                    {
-                        double dist = (z - RootBase[i]).Magnitude;
-                        if (dist < minDist)
-                        {
-                            minDist = dist;
-                            rootIdx[x, y] = i;
-                        }
-                    }
-
-                    double smoothValue;
-                    if (iteration < MaxIterations)
-                    {
-                        double logZn = Math.Log(z.Magnitude) / Math.Log(2);
-                        double nu = Math.Log(logZn) / Math.Log(2);
-                        smoothValue = iteration + 1 - nu;
-                    }
-                    else
-                    {
-                        smoothValue = MaxIterations;
-                    }
-                    fractal[x, y] = smoothValue;
-                }
-            });
-
-            return (fractal, rootIdx);
-        }
-
         internal static Bitmap EmbedLSB(Bitmap bmp, byte[] data)
         {
             int width = bmp.Width, height = bmp.Height;
-            int capacity = width * height * 3 / 8;
-
-            if (data.Length + 4 > capacity)
-                throw new ArgumentException("message too big for image");
-
 
             byte[] lengthBytes = BitConverter.GetBytes(data.Length);
             byte[] fullData = [.. lengthBytes, .. data];
@@ -294,41 +199,59 @@ namespace SteganoTool
         private static bool HasConverged(Complex z)
         {
             foreach (var root in RootBase)
-                if ((z - root).Magnitude < Epsilon)
+                if (Math.Sqrt((zx - root.Real) * (zx - root.Real) + (zy - root.Imaginary) * (zy - root.Imaginary)) < Epsilon)
                     return true;
             return false;
         }
 
-        internal static bool CheckIterations(Complex c, int width, int height, double escapeRadius, int samples = 250)
+        internal static bool CheckIterations(Complex c, int width, int height, double escapeRadius, string fractalType, int samplesPerAxis = 32)
         {
             Random rng = new ();
             double totalIterations = 0;
             int failures = 0;
-            int maxFailures = (int)(samples * 0.05);
+            double cReal = c.Real, cImag = c.Imaginary;
+            HashSet<int> uniqueIterations = [];
 
-            for (int i = 0; i < samples; ++i)
+            int xStep = XMath.Max(width / samplesPerAxis, 1);
+            int yStep = XMath.Max(height / samplesPerAxis, 1);
+            int sampleCount = ((width + xStep - 1) / xStep) * ((height + yStep - 1) / yStep);
+            int maxFailures = (int)(sampleCount * 0.004);
+            int minUnIterations = (int)(sampleCount * 0.022);
+
+            object lockObj = new();
+
+            Parallel.For(0, height / yStep, gridYidx =>
             {
-                int x = rng.Next(width);
-                int y = rng.Next(height);
-
-                double zx = xMin + (xMax - xMin) * x / (width - 1);
+                int y = gridYidx * yStep;
                 double zy = yMin + (yMax - yMin) * y / (height - 1);
-                Complex z = new (zx, zy);
-
-                int iteration = 0;
-                while (iteration < MaxIterations && z.Magnitude < escapeRadius)
+                for (int x = 0; x < width; x += xStep)
                 {
-                    z = z * z + c;
-                    iteration++;
+                    double zx = xMin + (xMax - xMin) * x / (width - 1);
+                    double zx2 = zx, zy2 = zy;
+                    int iteration = 0;
+
+                    while (iteration < MaxIterations && (zx2 * zx2 + zy2 * zy2) < escapeRadius * escapeRadius)
+                    {
+                        if (double.IsNaN(zx2) || double.IsNaN(zy2) || double.IsInfinity(zx2) || double.IsInfinity(zy2))
+                            return;
+                        (zx2, zy2) = func(zx2, zy2, cReal, cImag);
+                        ++iteration;
+                    }
+
+                    lock (lockObj)
+                    {
+                        totalIterations += iteration;
+                        uniqueIterations.Add(iteration);
+                        if (iteration == MaxIterations)
+                            ++failures;
+                    }
                 }
-                totalIterations += iteration;
-                if (iteration == MaxIterations)
-                    failures++;
-            }
+            });
 
-            double avgIterations = totalIterations / samples;
+            double avgIterations = totalIterations / sampleCount;
 
-            return failures <= maxFailures && avgIterations < (double)(MaxIterations * 0.99999999999999999999999999999m);
+            return uniqueIterations.Count >= minUnIterations && failures <= maxFailures &&
+                avgIterations < (MaxIterations * 0.9999999999999999);
         }
 
         private static int[] ColorChoiceD(string method)
@@ -336,8 +259,9 @@ namespace SteganoTool
             return method switch
             {
                 "Classic" => ClassicSet(),
-                "Rainbow" => Rainbow(),
-                "Aurora" => Aurora(),
+                "B&W" => BW(),
+                "Nuclear" => Nuclear(),
+                "LSD" => RainbowLSD(),
                 "Scientific" => ScientificVis(),
                 _ => throw new ArgumentException("Invalid color method")
             };
@@ -357,7 +281,6 @@ namespace SteganoTool
         {
             Color[] stops =
             [
-                Color.Black,
                 Color.FromArgb(25, 7, 26),
                 Color.FromArgb(9, 1, 47),
                 Color.FromArgb(4, 4, 73),
@@ -371,25 +294,36 @@ namespace SteganoTool
                 Color.FromArgb(248, 201, 95),
                 Color.FromArgb(255, 170, 0),
                 Color.FromArgb(153, 87, 0),
+                Color.FromArgb(20, 20, 20)
+            ];
+
+            return InterpolateColor(stops);
+        }
+
+        private static Color[] BW()
+        {
+            Color[] stops =
+            [
+                Color.White,
                 Color.Black
             ];
 
             return InterpolateColor(stops);
         }
 
-        private static int[] Aurora()
+        private static Color[] Nuclear()
         {
             Color[] stops =
             [
-                Color.FromArgb(25, 7, 26),     
-                Color.FromArgb(0, 30, 60),     
-                Color.FromArgb(0, 85, 80),     
-                Color.FromArgb(0, 180, 150),   
-                Color.FromArgb(0, 255, 120),   
-                Color.FromArgb(120, 255, 180), 
-                Color.FromArgb(200, 230, 255), 
-                Color.FromArgb(180, 120, 255), 
-                Color.FromArgb(80, 0, 60),     
+                Color.FromArgb(25, 7, 26),
+                Color.FromArgb(0, 30, 60),
+                Color.FromArgb(0, 85, 80),
+                Color.FromArgb(0, 180, 150),
+                Color.FromArgb(0, 255, 120),
+                Color.FromArgb(120, 255, 180),
+                Color.FromArgb(200, 230, 255),
+                Color.FromArgb(180, 120, 255),
+                Color.FromArgb(80, 0, 60),
             ];
 
             return InterpolateColor(stops);
@@ -398,10 +332,14 @@ namespace SteganoTool
         private static int[] InterpolateColor(Color[] stops, int steps = MaxIterations)
         {
             int[] palette = new int[steps + 1];
+
+            double stepRange = steps - 1;
+            double stopRange = stops.Length - 1;
+
             for (int i = 0; i < steps; ++i)
             {
-                double pos = (double)i / (steps - 1) * (stops.Length - 1);
-                int idx = (int)pos;
+                double pos = steps > 1 ? i / stepRange * stopRange: 0;
+                int idx = Math.Min((int)pos, stops.Length - 2);
                 double frac = pos - idx;
 
                 if (idx >= stops.Length - 1)
@@ -421,15 +359,15 @@ namespace SteganoTool
             return palette;
         }
 
-        private static int[] Rainbow(int steps = MaxIterations)
+        private static Color[] RainbowLSD(int steps = MaxIterations, double frequency = 50.0)
         {
-            int[] palette = new int[steps + 1];
-            for (int i = 0; i < steps; ++i)
+            Color[] palette = new Color[steps + 1];
+            for (int i = 0; i <= steps; ++i)
             {
                 double t = (double)i / (steps - 1);
-                double r = Math.Sin(Math.PI * t);
-                double g = Math.Sin(Math.PI * t + 2 * Math.PI / 3);
-                double b = Math.Sin(Math.PI * t + 4 * Math.PI / 3);
+                double r = Math.Sin(frequency * Math.PI * t);
+                double g = Math.Sin(frequency * Math.PI * t + 2 * Math.PI / 3);
+                double b = Math.Sin(frequency * Math.PI * t + 4 * Math.PI / 3);
 
                 palette[i] = Color.FromArgb(
                     255,
@@ -513,7 +451,7 @@ namespace SteganoTool
             int r = (int)(c.R + (255 - c.R) * t);
             int g = (int)(c.G + (255 - c.G) * t);
             int b = (int)(c.B + (255 - c.B) * t);
-            return Color.FromArgb(r, g, b);
+            return Color.FromArgb(r, g, b).ToArgb();
         }
     }
 }
