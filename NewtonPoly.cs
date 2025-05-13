@@ -1,13 +1,9 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Numerics;
+﻿using System.Numerics;
 using System.Security.Cryptography;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace SteganoTool
 {
+    //This entire file is a leftover from attempting to implement other fractal types
     internal class NewtonPoly
     {
         public int Degree { get; }

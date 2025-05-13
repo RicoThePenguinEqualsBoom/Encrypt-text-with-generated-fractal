@@ -8,18 +8,25 @@ using ILGPU.Runtime;
 using ILGPU.Runtime.Cuda;
 using ILGPU.Runtime.OpenCL;
 using ILGPU.Runtime.CPU;
-using System;
 using ILGPU.IR.Types;
+using System.Diagnostics;
 
 namespace SteganoTool
 {
+    /**Things leftover from trying to implement other fractal types but that won't be removed to facilitate future
+     * implementation will henceforth be labeled as Leftovers**/
+    /*Most values are set as doubles for precision(decimals would be a computational nightmare)
+     * but floats also return valid results and are faster*/
     internal class ProcessFractal
     {
+        //Declare the constants
         private const double Epsilon = 1e-6;
         private const int MaxIterations = 200_000;
         private const double xMin = -1.5, yMin = -1.5;
         private const double xMax = 1.5, yMax = 1.5;
+        private static readonly IReadOnlyList<int> TileSizes = [128, 256, 512, 1_024, 2_048, 4_096, 8_192, 16_384, 32_768];
 
+        //Leftovers
         private static readonly Complex[] RootBase =
         [
             new(1, 0),
@@ -27,21 +34,26 @@ namespace SteganoTool
             new(-0.5, -Math.Sqrt(3)/2)
         ];
 
-        private delegate (Vector<double> zx, Vector<double> zy) VectorFunc(Vector<double> zx2, Vector<double> zy2, Vector<double> cReal, Vector<double> cImag);
+        //Create delegates for the math required by the fractal generation methods
+        private delegate (Vector<double> zx, Vector<double> zy) VectorFunc(Vector<double> zx2, Vector<double> zy2,
+            Vector<double> cReal, Vector<double> cImag);
 
-        private static (Vector<double> zx, Vector<double> zy) JuliaFunc(Vector<double> zx2, Vector<double> zy2, Vector<double> cReal, Vector<double> cImag)
+        private static (Vector<double> zx, Vector<double> zy) JuliaFunc(Vector<double> zx2, Vector<double> zy2,
+            Vector<double> cReal, Vector<double> cImag)
         {
             Vector<double> zx = (zx2 * zx2 - zy2 * zy2 + cReal);
             Vector<double> zy = (2 * zx2 * zy2 + cImag);
             return (zx, zy);
         }
 
-        private static (Vector<double> zx, Vector<double> zy) NovaFunc(Vector<double> zx2, Vector<double> zy2, Vector<double> cReal, Vector<double> cImag)
+        private static (Vector<double> zx, Vector<double> zy) NovaFunc(Vector<double> zx2, Vector<double> zy2,
+            Vector<double> cReal, Vector<double> cImag)
         {
             return (zx2, zy2);
         }
 
-        private static (Vector<double> zx, Vector<double> zy) NewtonFunc(Vector<double> zx2, Vector<double> zy2, Vector<double> cReal, Vector<double> cImag)
+        private static (Vector<double> zx, Vector<double> zy) NewtonFunc(Vector<double> zx2, Vector<double> zy2,
+            Vector<double> cReal, Vector<double> cImag)
         {
             return (zx2, zy2);
         }
@@ -65,21 +77,27 @@ namespace SteganoTool
             return (zx2, zy2);
         }
 
+        //Generate the fractal
         internal static Bitmap GenerateFractal(Complex c, int width, int height, double escapeRadius, string colorMethod,
             string fractalType, string vergeType)
         {
+            //Declare your variables
             VectorFunc vFunc;
             DoubleFunc dFunc;
             Color[] palette;
             double[] fractal;
             int[,] roots = { };
             bool rootFillMethod = vergeType == "C";
+            //Leftovers
             switch (fractalType)
             {
                 case "Julia":
+                    //Grab the function delegates belonging to the selected fractal method
                     vFunc = JuliaFunc;
                     dFunc = JuliaFunc;
+                    //Generate the fractal set
                     fractal = GenerateDivergingSet(c, width, height, escapeRadius, vFunc, dFunc);
+                    //Grab the selected color palette
                     palette = ColorChoiceD(colorMethod);
                     break;
                 case "Nova":
@@ -98,29 +116,22 @@ namespace SteganoTool
                     throw new ArgumentException("no selected Fractal type");
             }
 
+            //Create the image with the appropriate dimensions
             Bitmap bmp = new(width, height);
+            //Lock the image data for modification
             BitmapData bmpData = bmp.LockBits(new Rectangle(0, 0, width, height), ImageLockMode.WriteOnly,
                 PixelFormat.Format32bppArgb);
 
+            //Get the largest value in the fractal set for color normalization
             double maxVal = fractal.Cast<double>().Max();
             if (maxVal <= 0)
                 maxVal = 1;
+            //Create the pixel array for coloring
             int[] pixels = new int[width * height];
-
-            int[] hist = new int[10];
-            for (int i = 0; i < fractal.Length; ++i)
-            {
-                double v = fractal[i] / maxVal;
-                if (double.IsNaN(v) || double.IsInfinity(v)) continue;
-                int b = (int)(v * hist.Length);
-                if (b < 0) b = 0;
-                if (b >= hist.Length) b = hist.Length - 1;
-                hist[b]++;
-            }
-            MessageBox.Show(string.Join(", ", hist));
 
             try
             {
+                //Leftovers
                 if ((vFunc == NovaFunc || vFunc == NewtonFunc) && rootFillMethod)
                 {
                     Parallel.For(0, height, y =>
@@ -128,7 +139,7 @@ namespace SteganoTool
                         int rowOffset = y * width;
                         for (int x = 0; x < width; ++x)
                         {
-                            double norm = Math.Pow(fractal[rowOffset + x] / maxVal, 0.7f);
+                            double norm = Math.Pow(fractal[rowOffset + x] / maxVal, 0.65f);
                             int colorIdx = roots[x, y] % palette.Length;
                             Color color = BlendWithWhite(palette[colorIdx], norm);
                             pixels[rowOffset + x] = color.ToArgb();
@@ -139,14 +150,20 @@ namespace SteganoTool
                 {
                     Parallel.For(0, height, y =>
                     {
+                        //Precompute the offset for each row to avoid repeated math
                         int rowOffset = y * width;
                         for (int x = 0; x < width; ++x)
                         {
-                            double rawNorm = fractal[rowOffset + x] / maxVal;
-                            if (double.IsNaN(rawNorm) || double.IsInfinity(rawNorm)) rawNorm = 0;
-                            double norm = Math.Pow(Math.Max(rawNorm, 0), 0.7);
-                            norm = Math.Min(norm, 1.0);
-                            int colorIdx = (int)(norm * (palette.Length - 1));
+                            //Normalize the fractal value and clamp it to the palette size(I use an arbitrary value of 0.7
+                            //but experimentation is encouraged)
+                            double norm = Math.Pow(fractal[rowOffset + x] / maxVal, 0.65f);
+                            //Make sure norm is a valid value
+                            if (double.IsNaN(norm) || double.IsInfinity(norm) || norm < 0) norm = 0;
+                            else if (norm > 1) norm = 1;
+                            //Scale the norm to the palette size
+                            norm *= (palette.Length - 1);
+                            int colorIdx = (int)Math.Clamp(norm, 0, palette.Length - 1);
+                            //Assign the color values
                             Color color = palette[colorIdx];
                             pixels[rowOffset + x] = color.ToArgb();
                         }
@@ -155,14 +172,8 @@ namespace SteganoTool
             }
             finally
             {
-                IntPtr destPtr = 0;
-                int srcOffset = 0;
-                for (int y = 0; y < height; y++)
-                {
-                    destPtr = bmpData.Scan0 + y * bmpData.Stride;
-                    srcOffset = y * width;
-                    Marshal.Copy(pixels, srcOffset, destPtr, width);
-                }
+                //Copy the color values to the image data and unlock it
+                Marshal.Copy(pixels, 0, bmpData.Scan0, pixels.Length);
                 bmp.UnlockBits(bmpData);
             }
 
@@ -172,119 +183,9 @@ namespace SteganoTool
         private static double[] GenerateDivergingSet(Complex c, int width, int height, double escapeRadius, VectorFunc vFunc,
             DoubleFunc dFunc)
         {
+            //Declare your variables
             double[] fractal = new double[width * height];
             double cReal = c.Real, cImag = c.Imaginary;
-
-            /*Parallel.For(0, height, y =>
-            {
-                int rowOffset = y * width;
-                double zy = yMin + (yMax - yMin) * y / (height - 1);
-                for (int x = 0; x < width; ++x)
-                {
-                    double zx = xMin + (xMax - xMin) * x / (width - 1);
-                    double zx2 = zx, zy2 = zy;
-                    int iteration = 0;
-
-                    double sqEscapeRadius = escapeRadius * escapeRadius;
-                    while (iteration < MaxIterations && (zx2 * zx2 + zy2 * zy2) < sqEscapeRadius)
-                    {
-                        if (double.IsNaN(zx2) || double.IsNaN(zy2) || double.IsInfinity(zx2) || double.IsInfinity(zy2))
-                            return;
-
-                        (zx2, zy2) = func(zx2, zy2, cReal, cImag);
-                        ++iteration;
-                    }
-
-                    double smoothValue;
-                    if (iteration < MaxIterations)
-                    {
-                        double logZn = Math.Log(Math.Sqrt(zx2 * zx2 + zy2 * zy2)) / Math.Log(2);
-                        double nu = Math.Log(logZn) / Math.Log(2);
-                        smoothValue = iteration + 1 - nu;
-                    }
-                    else
-                    {
-                        smoothValue = MaxIterations;
-                    }
-
-                    if (double.IsNaN(smoothValue) || double.IsInfinity(smoothValue))
-                        smoothValue = 0;
-
-                    
-                    fractal[rowOffset + x] = smoothValue;
-                }
-            });
-            
-            return fractal;
-
-            double[] resultRow = new double[width];
-            int simdWidth = Vector<double>.Count;
-            double escapeSq = escapeRadius * escapeRadius;
-            double dx = (xMax - xMin) / (width - 1);
-            double dy = (yMax - yMin) / (height - 1);
-            double[] zxArr = new double[simdWidth];
-            var cRealVec = new Vector<double>(cReal);
-            var cImagVec = new Vector<double>(cImag);
-            var iterations = Vector<int>.Zero;
-
-            Parallel.For(0, height, new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, Environment.ProcessorCount - 2) }, y =>
-            {
-                double zy = yMin + dy * y;
-
-                for (int x = 0; x <= width - simdWidth; x += simdWidth)
-                {
-                    // Prepare SIMD batch of zx
-                    for (int i = 0; i < simdWidth; ++i)
-                        zxArr[i] = xMin + dx * (x + i);
-
-                    var zx = new Vector<double>(zxArr);
-                    var zyVec = new Vector<double>(zy);
-
-                    var mask = Vector.GreaterThan(new Vector<double>(escapeSq), zx * zx + zyVec * zyVec);
-
-                    var zx2 = zx;
-                    var zy2 = zyVec;
-
-                    for (int k = 0; k < MaxIterations; ++k)
-                    {
-                        var notEscaped = Vector.LessThan(zx2 * zx2 + zy2 * zy2, new Vector<double>(escapeSq));
-
-                        if (Vector.EqualsAll((Vector<int>)notEscaped, Vector<int>.Zero) == true)
-                            break;
-
-                        (zx2, zy2) = vFunc(zx2, zy2, cRealVec, cImagVec);
-
-                        // Increment iterations for not-escaped lanes
-                        iterations += Vector.ConditionalSelect((Vector<int>)notEscaped, Vector<int>.One, Vector<int>.Zero);
-                    }
-
-                    // Store results
-                    for (int i = 0; i < simdWidth; ++i)
-                        resultRow[x + i] = iterations[i];
-                }
-
-                // Handle the tail (any remaining pixels)
-                for (int x = 0; x < width; ++x)
-                {
-                    double zx = xMin + dx * x;
-                    double zyVal = zy;
-                    int iterations = 0;
-                    while (iterations < MaxIterations && zx * zx + zyVal * zyVal < escapeSq)
-                    {
-                        double temp = zx * zx - zyVal * zyVal + cReal;
-                        zyVal = 2 * zx * zyVal + cImag;
-                        zx = temp;
-                        ++iterations;
-                    }
-                    resultRow[x] = iterations;
-                }
-
-                for (int x = 0; x < width; ++x)
-                    fractal[y * width + x] = resultRow[x];
-            });
-
-            return fractal;*/
-
             double log2 = Math.Log(2);
             double escapeRadiusSquared = escapeRadius * escapeRadius;
             int vectorSize = Vector<double>.Count;
@@ -293,93 +194,140 @@ namespace SteganoTool
             Vector<double> cx = new(c.Real);
             Vector<double> cy = new(c.Imaginary);
 
-            Parallel.For(0, height, y =>
+            //Create the tiles required for optimal parallelization (I used a list of powers of 2 for optimal cpu compatability)
+            double pTileSize = Math.Sqrt(width * height / 4);
+            int rTileSize = TileSizes.Aggregate((x, y) => Math.Abs(x - pTileSize) < Math.Abs(y - pTileSize) ? x : y);
+            var tiles = new List<(int x0, int y0, int x1, int y1)>();
+            for (int y = 0; y < height; y += rTileSize)
+                for (int x = 0; x < width; x += rTileSize)
+                    tiles.Add((x, y, Math.Min(x + rTileSize, width), Math.Min(y + rTileSize, height)));
+
+            Parallel.ForEach(tiles, tile =>
             {
-                double zy = yMin + (yMax - yMin) * y / (height - 1);
-                Vector<double> zyVec = new(zy);
-                int rowOffset = y * width;
-                Span<double> zxArr = stackalloc double[vectorSize];
-
-                int x = 0;
-                for (; x <= width - vectorSize; x += vectorSize)
+                Parallel.For(tile.y0, tile.y1, y =>
                 {
-                    for (int i = 0; i < vectorSize; i++)
-                        zxArr[i] = xMin + (xMax - xMin) * (x + i) / (width - 1);
+                    //Precompute available variables to avoid repeated math
+                    Span<double> zxArr = stackalloc double[vectorSize];
+                    double zy = yMin + (yMax - yMin) * y / (height - 1);
+                    int rowOffset = y * width;
 
-                    Vector<double> zx = new(zxArr);
-                    Vector<double> zx2 = zx * zx;
-                    Vector<double> zy2 = zyVec * zyVec;
-
-                    Vector<int> iterVec = Vector<int>.Zero;
-
-                    Vector<double> magSq = zx2 + zy2;
-                    for (int iterations = 0; iterations < MaxIterations; ++iterations)
+                    //Declare the size variable for the SIMD loop outside to avoid doing unnecessary math for the tail
+                    int x = tile.x0;
+                    for (; x <= tile.x1 - vectorSize; x += vectorSize)
                     {
-                        var mask = Vector.LessThan(magSq, radiusSq);
-                        if (Vector.EqualsAll((Vector<int>)mask, Vector<int>.Zero))
-                            break;
+                        //Compute the zx values for the SIMD vector size
+                        for (int i = 0; i < vectorSize; ++i)
+                            zxArr[i] = xMin + (xMax - xMin) * (x + i) / (width - 1);
 
-                        iterVec += Vector.ConditionalSelect((Vector<int>)mask, Vector<int>.One, Vector<int>.Zero);
+                        //Declare the remaining SIMD variables
+                        Vector<double> zxVec = new(zxArr);
+                        Vector<double> zx2 = zxVec * zxVec;
+                        Vector<double> zyVec = new(zy);
+                        Vector<double> zy2 = zyVec * zyVec;
+                        Vector<double> lastZx = zxVec;
+                        Vector<double> lastZy = zyVec;
 
-                        (zx, zyVec) = vFunc(zx, zyVec, cx, cy);
+                        Vector<long> iterVec = Vector<long>.Zero;
+                        Vector<long> escapedMask = Vector<long>.Zero;
 
-                        zx2 = zx * zx;
-                        zy2 = zyVec * zyVec;
-                        magSq = zx2 + zy2;
+                        Vector<double> magSq = zx2 + zy2;
+                        //Loop for the iterations to reach the max iterations or escape radius
+                        for (int iterations = 0; iterations < MaxIterations; ++iterations)
+                        {
+                            //Get the zx and zy values that are within the escape radius
+                            var mask = Vector.LessThan(magSq, radiusSq) & ~escapedMask;
+
+                            //Get the zx and zy values that are outside the escape radius
+                            var newlyEscaped = Vector.GreaterThanOrEqual(magSq, radiusSq) & ~escapedMask;
+
+                            //Check wether the previous values are still within the escape radius
+                            lastZx = Vector.ConditionalSelect(newlyEscaped, zxVec, lastZx);
+                            lastZy = Vector.ConditionalSelect(newlyEscaped, zyVec, lastZy);
+
+                            //Increment the escaped count for the values that aren't still within the escape radius
+                            escapedMask |= newlyEscaped;
+
+                            //Increment the iteration count for the values that are still within the escape radius
+                            iterVec += Vector.ConditionalSelect(mask, Vector<long>.One, Vector<long>.Zero);
+
+                            //Do the fractal math
+                            (Vector<double> zxNew, Vector<double> zyNew) = vFunc(zxVec, zyVec, cx, cy);
+
+                            //Check wether the new values are still within the escape radius
+                            zxVec = Vector.ConditionalSelect(mask, zxNew, zxVec);
+                            zyVec = Vector.ConditionalSelect(mask, zyNew, zyVec);
+
+                            //Leave the loop if all values are outside the escape radius
+                            if (Vector.EqualsAll(mask, Vector<long>.Zero))
+                                break;
+
+                            magSq = zxNew * zxNew + zyNew * zyNew;
+                        }
+
+                        for (int i = 0; i < vectorSize; ++i)
+                        {
+                            double smooth;
+                            if (iterVec[i] < MaxIterations)
+                            {
+                                //Smooth out the values that aren't at the max iterations for clean coloring
+                                double mag = Math.Sqrt(lastZy[i] * lastZy[i] + lastZx[i] * lastZx[i]);
+                                if (mag > 0)
+                                {
+                                    double logZn = Math.Log(mag) / log2;
+                                    double nu = Math.Log(logZn) / log2;
+                                    smooth = iterVec[i] + 1 - nu;
+                                }
+                                else
+                                {
+                                    smooth = iterVec[i];
+                                }
+                            }
+                            else
+                            {
+                                smooth = MaxIterations;
+                            }
+
+                            fractal[rowOffset + x + i] = smooth;
+                        }
                     }
 
-                    for (int i = 0; i < vectorSize; i++)
+                    //Take care of the tail from the SIMD loop (same math only without the complicated vectors and stuff)
+                    for (; x < tile.x1; ++x)
                     {
-                        double smooth;
-                        if (iterVec[i] < MaxIterations)
+                        double zx = xMin + (xMax - xMin) * x / (width - 1);
+                        double zx2 = zx * zx;
+                        double zy2 = zy * zy;
+                        int iterations = 0;
+                        while (iterations < MaxIterations && (zx2 + zy2) < escapeRadiusSquared)
                         {
-                            double logZn = Math.Log(Math.Sqrt(zx2[i] + zy2[i])) / log2;
+                            (zx, zy) = dFunc(zx, zy, cReal, cImag);
+
+                            zx2 = zx * zx;
+                            zy2 = zy * zy;
+                            ++iterations;
+                        }
+
+                        double smooth;
+                        if (iterations < MaxIterations)
+                        {
+                            double logZn = Math.Log(Math.Sqrt(zx2 + zy2)) / log2;
                             double nu = Math.Log(logZn) / log2;
-                            smooth = iterVec[i] + 1 - nu;
+                            smooth = iterations + 1 - nu;
                         }
                         else
                         {
                             smooth = MaxIterations;
                         }
-                        
-                        fractal[rowOffset + x + i] = smooth;
-                    }
-                }
 
-                for (; x < width; ++x)
-                {
-                    double zx = xMin + (xMax - xMin) * x / (width - 1);
-                    double zx2 = zx * zx;
-                    double zy2 = zy * zy;
-                    int iterations = 0;
-                    while (iterations < MaxIterations && (zx2 + zy2) < escapeRadiusSquared)
-                    {
-                        (zx, zy) = dFunc(zx, zy, cReal, cImag);
-
-                        zx2 = zx * zx;
-                        zy2 = zy * zy;
-                        ++iterations;
+                        fractal[rowOffset + x] = smooth;
                     }
-
-                    double smooth;
-                    if (iterations < MaxIterations)
-                    {
-                        double logZn = Math.Log(Math.Sqrt(zx2 + zy2)) / log2;
-                        double nu = Math.Log(logZn) / log2;
-                        smooth = iterations + 1 - nu;
-                    }
-                    else
-                    {
-                        smooth = MaxIterations;
-                    }
-
-                    fractal[rowOffset + x] = smooth;
-                }
+                });
             });
 
             return fractal;
         }
 
+        //Leftovers
         private static (double[] fractal, int[,] rootIdx) GenerateConvergingSet(Complex c, int width, int height, DoubleFunc dFunc)
         {
             double[] fractal = new double[width * height];
@@ -434,82 +382,99 @@ namespace SteganoTool
 
         internal static Bitmap EmbedLSB(Bitmap bmp, byte[] data)
         {
+            //Get the target image' dimensions
             int width = bmp.Width, height = bmp.Height;
-            int capacity = width * height * 3 / 8;
 
-            if (data.Length + 4 > capacity)
-                throw new ArgumentException("message too big for image");
-
-
+            //Get all the data to be embedded in the correct formats
             byte[] lengthBytes = BitConverter.GetBytes(data.Length);
             byte[] fullData = [.. lengthBytes, .. data];
 
+            //Create a new bitmap to avoid errors from modifying the original
             Bitmap encrypted = new (bmp);
 
+            //Lock the new image' data for modification
             BitmapData bmpData = encrypted.LockBits(new Rectangle(0, 0, width, height), ImageLockMode.ReadWrite,
                 PixelFormat.Format24bppRgb);
 
+            //Get the stride and size of the image data to create the modifying array
             int stride = bmpData.Stride;
             int bytes = stride * height;
             byte[] pixelData = new byte[bytes];
 
+            //Copy the image data to the modifying array
             Marshal.Copy(bmpData.Scan0, pixelData, 0, bytes);
 
+            //Get the total number of bits to be embedded
             int totalBits = fullData.Length * 8;
             for (int i = 0; i < pixelData.Length && i < totalBits; ++i)
             {
+                //Using the least significant bit of each pixel, embed the data
                 int byteIdx = i / 8;
                 int bitIdx = 7 - (i % 8);
                 int bit = (fullData[byteIdx] >> bitIdx) & 1;
                 pixelData[i] = (byte)((pixelData[i] & 0xFE) | bit);
             }
 
+            //Copy the modified data back to the image and unlock it
             Marshal.Copy(pixelData, 0, bmpData.Scan0, bytes);
             encrypted.UnlockBits(bmpData);
+
             return encrypted;
         }
 
         internal static byte[] ExtractLSB(Bitmap bmp)
         {
+            //Get the target image' dimensions
             int width = bmp.Width;
             int height = bmp.Height;
+            //Get the maximum number of bytes that can be extracted
             int maxBytes = width * height * 3 / 8;
 
+            //Lock the image data for reading
             BitmapData bmpData = bmp.LockBits(new Rectangle(0, 0, width, height), ImageLockMode.ReadOnly,
                 PixelFormat.Format24bppRgb);
 
+            //Get the stride and size of the image data to create the reading array
             int stride = bmpData.Stride;
             int bytes = stride * height;
             byte[] pixelData = new byte[bytes];
 
+            //Copy the image data to the reading array
             Marshal.Copy(bmpData.Scan0, pixelData, 0, bytes);
 
+            //Create a buffer to store the extracted data
             byte[] buffer = new byte[maxBytes];
             int dataLen = -1;
 
             for (int i = 0; i < pixelData.Length && (dataLen == -1 || i < (dataLen + 4) * 8); ++i)
             {
+                //Using the least significant bit of each pixel, extract the data
                 int byteIdx = i / 8;
                 int bitIdx = 7 - (i % 8);
                 int bit = pixelData[i] & 1;
                 buffer[byteIdx] = (byte)((buffer[byteIdx] & ~(1 << bitIdx)) | (bit << bitIdx));
 
+                //Check if the data length has been extracted
                 if (i == 32 && dataLen == -1)
                 {
                     dataLen = BitConverter.ToInt32(buffer, 0);
                 }
             }
 
+            //Unlock the image data
             bmp.UnlockBits(bmpData);
 
             if (dataLen < 0 || dataLen > maxBytes - 4)
                 throw new InvalidOperationException("Invalid or no embedded data found");
 
+            //Copy the extracted data to a new array
             byte[] result = new byte[dataLen];
             Array.Copy(buffer, 4, result, 0, dataLen);
+
             return result;
         }
 
+        //Leftovers
         private static bool HasConverged(double zx, double zy)
         {
             foreach (var root in RootBase)
@@ -518,21 +483,36 @@ namespace SteganoTool
             return false;
         }
 
-        internal static bool CheckIterations(Complex c, int width, int height, double escapeRadius, int samplesPerAxis = 16)
+        internal static bool CheckIterations(Complex c, int width, int height, double escapeRadius, string fractalType,
+            int samplesPerAxis = 32)
         {
+            //Declare your variables
             Random rng = new ();
             double totalIterations = 0;
             int failures = 0;
             double cReal = c.Real, cImag = c.Imaginary;
             HashSet<int> uniqueIterations = [];
+            DoubleFunc func = fractalType switch
+            {
+                "Julia" => JuliaFunc,
+                "Nova" => NovaFunc,
+                "Newton" => NewtonFunc,
+                _ => JuliaFunc
+            };
 
+            //We only need to check a sample of the values to get an idea of the fractal, so declare the values for that 
             int xStep = Math.Max(width / samplesPerAxis, 1);
             int yStep = Math.Max(height / samplesPerAxis, 1);
+            //Get the number of samples to be taken and based on that calculate the failure parameters
             int sampleCount = ((width + xStep - 1) / xStep) * ((height + yStep - 1) / yStep);
-            int maxFailures = (int)(sampleCount * 0.1);
+            //Reducing the amount of failures allowed reduces the chance of solid "blobs" of never escaping iterations
+            int maxFailures = (int)(sampleCount * 0.004);
+            //Increasing the amount of unique iterations required decreases the amount of "simple" fractals
+            int minUnIterations = (int)(sampleCount * 0.022);
 
             object lockObj = new();
 
+            //Use the same methods as the fractal generation
             Parallel.For(0, height / yStep, gridYidx =>
             {
                 int y = gridYidx * yStep;
@@ -547,7 +527,7 @@ namespace SteganoTool
                     {
                         if (double.IsNaN(zx2) || double.IsNaN(zy2) || double.IsInfinity(zx2) || double.IsInfinity(zy2))
                             return;
-                        (zx2, zy2) = JuliaFunc(zx2, zy2, cReal, cImag);
+                        (zx2, zy2) = func(zx2, zy2, cReal, cImag);
                         ++iteration;
                     }
 
@@ -561,9 +541,11 @@ namespace SteganoTool
                 }
             });
 
+            //Calculate the average iterations and check if the fractal is valid
             double avgIterations = totalIterations / sampleCount;
 
-            return uniqueIterations.Count > 5 && failures <= maxFailures && avgIterations < (MaxIterations * 0.9999999999999999);
+            return uniqueIterations.Count >= minUnIterations && failures <= maxFailures &&
+                avgIterations < (MaxIterations * 0.9999999999999999);
         }
 
         private static Color[] ColorChoiceD(string method)
@@ -571,13 +553,15 @@ namespace SteganoTool
             return method switch
             {
                 "Classic" => ClassicSet(),
-                "Rainbow" => Rainbow(),
-                "Aurora" => Aurora(),
+                "B&W" => BW(),
+                "Nuclear" => Nuclear(),
+                "LSD" => RainbowLSD(),
                 "Scientific" => ScientificVis(),
                 _ => throw new ArgumentException("Invalid color method")
             };
         }
 
+        //Leftovers
         private static Color[] ColorChoiceC(string method)
         {
             return method switch
@@ -588,11 +572,11 @@ namespace SteganoTool
             };
         }
 
+        //Create your color palettes
         private static Color[] ClassicSet()
         {
             Color[] stops =
             [
-                Color.Black,
                 Color.FromArgb(25, 7, 26),
                 Color.FromArgb(9, 1, 47),
                 Color.FromArgb(4, 4, 73),
@@ -606,37 +590,55 @@ namespace SteganoTool
                 Color.FromArgb(248, 201, 95),
                 Color.FromArgb(255, 170, 0),
                 Color.FromArgb(153, 87, 0),
+                Color.FromArgb(20, 20, 20)
+            ];
+
+            return InterpolateColor(stops);
+        }
+
+        private static Color[] BW()
+        {
+            Color[] stops =
+            [
+                Color.White,
                 Color.Black
             ];
 
             return InterpolateColor(stops);
         }
 
-        private static Color[] Aurora()
+        private static Color[] Nuclear()
         {
             Color[] stops =
             [
-                Color.FromArgb(25, 7, 26),     
-                Color.FromArgb(0, 30, 60),     
-                Color.FromArgb(0, 85, 80),     
-                Color.FromArgb(0, 180, 150),   
-                Color.FromArgb(0, 255, 120),   
-                Color.FromArgb(120, 255, 180), 
-                Color.FromArgb(200, 230, 255), 
-                Color.FromArgb(180, 120, 255), 
-                Color.FromArgb(80, 0, 60),     
+                Color.FromArgb(25, 7, 26),
+                Color.FromArgb(0, 30, 60),
+                Color.FromArgb(0, 85, 80),
+                Color.FromArgb(0, 180, 150),
+                Color.FromArgb(0, 255, 120),
+                Color.FromArgb(120, 255, 180),
+                Color.FromArgb(200, 230, 255),
+                Color.FromArgb(180, 120, 255),
+                Color.FromArgb(80, 0, 60),
             ];
 
             return InterpolateColor(stops);
         }
 
-        private static Color[] InterpolateColor(Color[] stops, int steps = MaxIterations / 4)
+        private static Color[] InterpolateColor(Color[] stops, int steps = MaxIterations, double gamma = 2.2)
         {
+            //Create a palette with a number of steps associated to the max iterations
             Color[] palette = new Color[steps + 1];
-            for (int i = 0; i <= steps; ++i)
+
+            //Precompute the required variables
+            double stepRange = steps - 1;
+            double stopRange = stops.Length - 1;
+
+            for (int i = 0; i < steps; ++i)
             {
-                double pos = (double)i / (steps - 1) * (stops.Length - 1);
-                int idx = (int)pos;
+                //Get the values for the interpolation
+                double pos = steps > 1 ? i / stepRange * stopRange: 0;
+                int idx = Math.Min((int)pos, stops.Length - 2);
                 double frac = pos - idx;
 
                 if (idx >= stops.Length - 1)
@@ -645,6 +647,7 @@ namespace SteganoTool
                 }
                 else
                 {
+                    //Interpolate the color values
                     Color c1 = stops[idx];
                     Color c2 = stops[idx + 1];
                     int r = (int)(c1.R + frac * (c2.R - c1.R));
@@ -656,15 +659,16 @@ namespace SteganoTool
             return palette;
         }
 
-        private static Color[] Rainbow(int steps = MaxIterations)
+        //Sinewave based rainbow palette
+        private static Color[] RainbowLSD(int steps = MaxIterations, double frequency = 50.0)
         {
             Color[] palette = new Color[steps + 1];
             for (int i = 0; i <= steps; ++i)
             {
                 double t = (double)i / (steps - 1);
-                double r = Math.Sin(Math.PI * t);
-                double g = Math.Sin(Math.PI * t + 2 * Math.PI / 3);
-                double b = Math.Sin(Math.PI * t + 4 * Math.PI / 3);
+                double r = Math.Sin(frequency * Math.PI * t);
+                double g = Math.Sin(frequency * Math.PI * t + 2 * Math.PI / 3);
+                double b = Math.Sin(frequency * Math.PI * t + 4 * Math.PI / 3);
 
                 palette[i] = Color.FromArgb(
                     255,
@@ -676,8 +680,9 @@ namespace SteganoTool
             return palette;
         }
 
-        private static Color[] ScientificVis(int steps = MaxIterations, double start = 0.5, double hue = 1.0, double rotations = -1.5,
-            double gamma = 1.0)
+        //Lightly modified Cubehelix color scheme method
+        private static Color[] ScientificVis(int steps = MaxIterations, double start = 0.7, double hue = 1.0, double rotations = -1.5,
+            double gamma = 1.2)
         {
             Color[] palette = new Color[steps + 1];
             for (int i = 0; i <= steps; ++i)
@@ -705,6 +710,7 @@ namespace SteganoTool
             return palette;
         }
 
+        //Leftovers
         private static Color[] RGB()
         {
             return

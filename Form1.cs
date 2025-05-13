@@ -1,23 +1,28 @@
+using System.Diagnostics;
 using System.Drawing.Imaging;
 using System.Numerics;
+using System.Security.Cryptography;
 using System.Text;
 
 namespace SteganoTool
 {
     internal partial class Form1 : Form
     {
+        //Be sure to load the initial combobox selections
         private void Form1_Load(object sender, EventArgs e)
         {
             gBox.SelectedItem = "Classic";
             fBox.SelectedItem = "Julia";
         }
 
+        //Be sure to load the form with the correct font
         internal Form1()
         {
             this.Font = SystemFonts.MessageBoxFont;
             InitializeComponent();
         }
 
+        //Declare all your variables
         #region Variable decleration
         private readonly OpenFileDialog ofd = new()
         {
@@ -39,6 +44,8 @@ namespace SteganoTool
         private string DText;
         private string key;
         private string DiOrCo = "D";
+        string gboxText;
+        string fboxText;
 
         private Bitmap EBmp;
         private Bitmap DBmp;
@@ -55,11 +62,12 @@ namespace SteganoTool
         private int height;
         private int width;
 
-        private float EscapeRadius = 2.0f;
+        private double EscapeRadius = 2.0;
         private double DReal;
         private double DImag;
         #endregion
 
+        //Make sure you aren't trying to save a null image/copy null text
         private void csBtn_Click(object sender, EventArgs e)
         {
             if (outputKey.Text != null) { Clipboard.SetText(outputKey.Text); }
@@ -89,9 +97,10 @@ namespace SteganoTool
             if (outputText.Text != null) { Clipboard.SetText(outputText.Text); }
         }
 
-        private void encryptBtn_Click(object sender, EventArgs e)
+        //Make it an async to complement the called method
+        private async void encryptBtn_Click(object sender, EventArgs e)
         {
-            if (inputText.Text != null) { encrypt(); }
+            if (inputText.Text != null) { await encrypt(); }
         }
 
         private void decryptBtn_Click(object sender, EventArgs e)
@@ -99,34 +108,45 @@ namespace SteganoTool
             if (DBmp != null) { decrypt(); }
         }
 
-        private void encrypt()
+        //Make encryption/generation an async task to ensure no application "freezing"
+        private async Task encrypt()
         {
             try
             {
+                //Set the necessary variables to the input values
                 EText = inputText.Text;
                 height = int.Parse(ImageH.Text);
                 width = int.Parse(ImageW.Text);
+                gboxText = gBox.Text;
+                fboxText = fBox.Text;
 
+                //Use the necessary methods for the other variables
                 (EKey, EIv) = ProcessKey.Generate();
 
                 encrypted = ProcessKey.EncryptWithAes(Encoding.UTF8.GetBytes(EText), EKey, EIv);
 
                 keyC = ProcessKey.GenerateFractalModifier(encrypted);
 
-                while (ProcessFractal.CheckIterations(keyC, width, height, EscapeRadius) == false)
+                //Check if keyC will generate a valid fractal (not void and doesn't take too long)
+                while (ProcessFractal.CheckIterations(keyC, width, height, EscapeRadius, fboxText) == false)
                 {
-                    MessageBox.Show("La clé est incorrecte ou l'image ne contient pas de message caché.");
                     (EKey, EIv) = ProcessKey.Generate();
                     encrypted = ProcessKey.EncryptWithAes(Encoding.UTF8.GetBytes(EText), EKey, EIv);
                     keyC = ProcessKey.GenerateFractalModifier(encrypted);
                 }
 
-                Bitmap bmp = ProcessFractal.GenerateFractal(keyC, width, height, EscapeRadius, gBox.Text, fBox.Text, DiOrCo);
+                //Generate the valid fractal with an await task run to prevent freezing
+                Bitmap bmp = await Task.Run(() =>
+                    ProcessFractal.GenerateFractal(keyC, width, height, EscapeRadius, gboxText, fboxText, DiOrCo)
+                );
 
+                //Embed the encrypted text into the fractal
                 EBmp = ProcessFractal.EmbedLSB(bmp, encrypted);
 
+                //Parse the key components into a continuous string
                 key = ProcessKey.ComposeKeyString(EKey, EIv, keyC);
 
+                //Display the final image and key string
                 outputImage.Image = EBmp;
                 outputKey.Text = key;
             }
@@ -136,21 +156,27 @@ namespace SteganoTool
             }
         }
 
+        //No need to make decryption async as it doesn't take as many resources to perform (even on large messages)
         private void decrypt()
         {
             try
             {
                 key = encryptKey.Text;
 
+                //Parse the key string into its components
                 (DKey, DIv, DReal, DImag) = ProcessKey.ParseKeyString(key);
 
+                //Decrypt the image using the same method as encryption
                 decrypted = ProcessFractal.ExtractLSB(DBmp);
 
+                //Decrypt the text using the same method as encryption
                 DText = Encoding.UTF8.GetString(ProcessKey.DecryptWithAes(decrypted, DKey, DIv));
 
-                if (DKey == null || DIv == null || DReal == 0 || DImag == 0 || decrypted == null || DText == null)
+                //Check if the decryption was successful
+                if (DKey == null || DIv == null || DReal == 0 || DImag == 0 || decrypted == null ||
+                    string.IsNullOrWhiteSpace(DText) || string.IsNullOrEmpty(DText))
                 {
-                    MessageBox.Show("La clé est incorrecte ou l'image ne contient pas de message caché.");
+                    Application.Exit();
                     return;
                 }
 
@@ -162,11 +188,12 @@ namespace SteganoTool
             }
         }
 
+        //Whenever the input text changes or the image size is changed, make sure the image is big enough
         private void inputText_TextChanged(object sender, EventArgs e)
         {
             width = int.Parse(ImageW.Text);
             height = int.Parse(ImageH.Text);
-            if (ImageSize.IsBigEnough(width, height, inputText.Text.Length) == false)
+            if (!ImageSize.IsBigEnough(width, height, inputText.Text.Length))
             {
                 (width, height) = ImageSize.ValidSize(width, height, inputText.Text);
             }
@@ -178,7 +205,7 @@ namespace SteganoTool
         {
             width = int.Parse(ImageW.Text);
             height = int.Parse(ImageH.Text);
-            if (ImageSize.IsBigEnough(width, height, inputText.Text.Length) == false)
+            if (!ImageSize.IsBigEnough(width, height, inputText.Text.Length))
             {
                 (width, height) = ImageSize.ValidSize(width, height, inputText.Text);
             }
@@ -190,7 +217,7 @@ namespace SteganoTool
         {
             width = int.Parse(ImageW.Text);
             height = int.Parse(ImageH.Text);
-            if (ImageSize.IsBigEnough(width, height, inputText.Text.Length) == false)
+            if (!ImageSize.IsBigEnough(width, height, inputText.Text.Length))
             {
                 (width, height) = ImageSize.ValidSize(width, height, inputText.Text);
             }
@@ -198,27 +225,21 @@ namespace SteganoTool
             ImageH.Text = height.ToString();
         }
 
-        private void tabControl1_SelectedIndexChanged(object sender, EventArgs e)
-        {
-            if (tabControl1.SelectedTab == tabControl1.TabPages[1])
-            {
-                MessageBox.Show("Warning!!! Wrong input of decryption parameters will result in BSOD");
-            }
-        }
-
+        //Aesthetic option
         private void Circle_CheckedChanged(object sender, EventArgs e)
         {
             if (Circle.Checked == true)
             {
-                EscapeRadius = 1.0f;
+                EscapeRadius = 1.0;
             }
             else
             {
-                EscapeRadius = 2.0f;
+                EscapeRadius = 2.0;
             }
         }
 
-        private void fBox_SelectedIndexChanged(object sender, EventArgs e)
+        //Leftover from trying to implement other fractal types 
+        /*private void fBox_SelectedIndexChanged(object sender, EventArgs e)
         {
             if (fBox.SelectedIndex > 0)
             {
@@ -233,6 +254,26 @@ namespace SteganoTool
             else
             {
                 gBox.Items.Remove("RGB");
+            }
+        }*/
+
+        //Reload the image in the newly selected color without changing the fractal (promotes experimentation)
+        private async void gBox_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            if (key != null)
+            {
+                height = int.Parse(ImageH.Text);
+                width = int.Parse(ImageW.Text);
+                gboxText = gBox.Text;
+                fboxText = fBox.Text;
+
+                Bitmap bmp = await Task.Run(() => 
+                    ProcessFractal.GenerateFractal(keyC, width, height, EscapeRadius, gboxText, fboxText, DiOrCo)
+                );
+
+                EBmp = ProcessFractal.EmbedLSB(bmp, encrypted);
+
+                outputImage.Image = EBmp;
             }
         }
     }

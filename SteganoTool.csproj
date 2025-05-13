@@ -11,11 +11,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Remove="GPU.cs" />
-    <Compile Remove="NewtonPoly.cs" />
-  </ItemGroup>
-
-  <ItemGroup>
     <PackageReference Include="ILGPU" Version="1.5.2" />
     <PackageReference Include="ILGPU.Algorithms" Version="1.5.2" />
   </ItemGroup>

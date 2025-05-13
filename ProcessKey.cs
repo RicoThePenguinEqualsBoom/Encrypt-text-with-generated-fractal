@@ -1,16 +1,19 @@
 ﻿using System.Globalization;
 using System.Numerics;
 using System.Security.Cryptography;
+using System.Windows.Forms;
 
 namespace SteganoTool
 {
     internal class ProcessKey
     {
+        // AES key and IV sizes in bytes
         private const int KeySize = 32;
         private const int IvSize = 16;
 
         internal static (byte[] key,  byte[] iv) Generate()
         {
+            // Generate random key and IV
             byte[] key = new byte[KeySize];
             byte[] iv = new byte[IvSize];
             using (var rng = RandomNumberGenerator.Create())
@@ -24,6 +27,7 @@ namespace SteganoTool
 
         internal static byte[] EncryptWithAes(byte[] data, byte[] key,  byte[] iv)
         {
+            //Using the advanced encryption standard encrypt the message data(once converted to a byte array)
             using (Aes aes = Aes.Create())
             {
                 aes.Key = key;
@@ -41,6 +45,7 @@ namespace SteganoTool
 
         internal static byte[] DecryptWithAes(byte[] encrypted, byte[] key, byte[] iv)
         {
+            //Using the advanced encryption standard decrypt the message data(once extracted to a byte array)
             using (Aes aes = Aes.Create())
             {
                 aes.Key = key;
@@ -58,6 +63,7 @@ namespace SteganoTool
 
         internal static Complex GenerateFractalModifier(byte[] encrypted)
         {
+            //Generate a complex number using the encrypted data as a modifier
             var hash = SHA256.HashData(encrypted);
             ulong realBits = BitConverter.ToUInt64(hash, 0);
             ulong imagBits = BitConverter.ToUInt64(hash, 8);
@@ -66,16 +72,17 @@ namespace SteganoTool
             double imagNorm = imagBits / (double)ulong.MaxValue;
 
             double angle = realNorm * 2 * Math.PI;
-            double radius = 0.75 + imagNorm * 0.25;
+            double radius = 0.01 + imagNorm * 2.09;
             double real = Math.Cos(angle) * radius;
             double imag = Math.Sin(angle) * radius;
-
+            
             Complex c = new(real, imag);
             return c;
         }
 
         internal static string ComposeKeyString(byte[] key, byte[] iv, Complex c)
         {
+            //Convert the key, iv and complex number(for added complexity) to a string
             var parts = new[]
             {
                 Convert.ToBase64String(key),
@@ -88,6 +95,7 @@ namespace SteganoTool
 
         internal static (byte[] key, byte[] iv, double real, double imag) ParseKeyString(string keyString)
         {
+            //Parse the string back to key, iv and complex number
             var parts = keyString.Split('|');
             if (parts.Length != 4)
                 throw new ArgumentException("bad key format");
