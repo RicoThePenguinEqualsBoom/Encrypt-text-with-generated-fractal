@@ -34,6 +34,8 @@ namespace SteganoTool
         {
             tabControl1 = new TabControl();
             tabPage1 = new TabPage();
+            label13 = new Label();
+            label12 = new Label();
             label11 = new Label();
             fBox = new ComboBox();
             Circle = new RadioButton();
@@ -80,11 +82,12 @@ namespace SteganoTool
             tabControl1.SelectedIndex = 0;
             tabControl1.Size = new Size(1322, 634);
             tabControl1.TabIndex = 20;
-            tabControl1.SelectedIndexChanged += tabControl1_SelectedIndexChanged;
             // 
             // tabPage1
             // 
             tabPage1.BackColor = SystemColors.Control;
+            tabPage1.Controls.Add(label13);
+            tabPage1.Controls.Add(label12);
             tabPage1.Controls.Add(label11);
             tabPage1.Controls.Add(fBox);
             tabPage1.Controls.Add(Circle);
@@ -111,10 +114,28 @@ namespace SteganoTool
             tabPage1.TabIndex = 0;
             tabPage1.Text = "Encrypt";
             // 
+            // label13
+            // 
+            label13.AutoSize = true;
+            label13.Location = new Point(485, 483);
+            label13.Name = "label13";
+            label13.Size = new Size(335, 15);
+            label13.TabIndex = 23;
+            label13.Text = "Warning: Fractal generation can occasionally take up to 1 min ";
+            // 
+            // label12
+            // 
+            label12.AutoSize = true;
+            label12.Location = new Point(940, 407);
+            label12.Name = "label12";
+            label12.Size = new Size(82, 15);
+            label12.TabIndex = 22;
+            label12.Text = "Generated key";
+            // 
             // label11
             // 
             label11.AutoSize = true;
-            label11.Location = new Point(437, 249);
+            label11.Location = new Point(398, 223);
             label11.Name = "label11";
             label11.Size = new Size(68, 15);
             label11.TabIndex = 21;
@@ -126,16 +147,15 @@ namespace SteganoTool
             fBox.Enabled = false;
             fBox.FormattingEnabled = true;
             fBox.Items.AddRange(new object[] { "Julia" });
-            fBox.Location = new Point(437, 267);
+            fBox.Location = new Point(398, 241);
             fBox.Name = "fBox";
             fBox.Size = new Size(135, 23);
             fBox.TabIndex = 20;
-            fBox.SelectedIndexChanged += fBox_SelectedIndexChanged;
             // 
             // Circle
             // 
             Circle.AutoSize = true;
-            Circle.Location = new Point(722, 186);
+            Circle.Location = new Point(690, 147);
             Circle.Name = "Circle";
             Circle.Size = new Size(55, 19);
             Circle.TabIndex = 19;
@@ -147,7 +167,7 @@ namespace SteganoTool
             // 
             noCircle.AutoSize = true;
             noCircle.Checked = true;
-            noCircle.Location = new Point(722, 161);
+            noCircle.Location = new Point(690, 122);
             noCircle.Name = "noCircle";
             noCircle.Size = new Size(72, 19);
             noCircle.TabIndex = 18;
@@ -158,7 +178,7 @@ namespace SteganoTool
             // label2
             // 
             label2.AutoSize = true;
-            label2.Location = new Point(722, 249);
+            label2.Location = new Point(690, 223);
             label2.Name = "label2";
             label2.Size = new Size(89, 15);
             label2.TabIndex = 17;
@@ -168,11 +188,12 @@ namespace SteganoTool
             // 
             gBox.DropDownStyle = ComboBoxStyle.DropDownList;
             gBox.FormattingEnabled = true;
-            gBox.Items.AddRange(new object[] { "Classic", "Aurora", "Rainbow", "Scientific" });
-            gBox.Location = new Point(722, 267);
+            gBox.Items.AddRange(new object[] { "Classic", "B&W", "Nuclear", "LSD", "Scientific" });
+            gBox.Location = new Point(690, 241);
             gBox.Name = "gBox";
             gBox.Size = new Size(121, 23);
             gBox.TabIndex = 16;
+            gBox.SelectedIndexChanged += gBox_SelectedIndexChanged;
             // 
             // label10
             // 
@@ -204,7 +225,7 @@ namespace SteganoTool
             // label7
             // 
             label7.AutoSize = true;
-            label7.Location = new Point(484, 84);
+            label7.Location = new Point(485, 111);
             label7.Name = "label7";
             label7.Size = new Size(62, 15);
             label7.TabIndex = 12;
@@ -231,16 +252,16 @@ namespace SteganoTool
             // label3
             // 
             label3.AutoSize = true;
-            label3.Location = new Point(940, 24);
+            label3.Location = new Point(940, 38);
             label3.Name = "label3";
-            label3.Size = new Size(201, 15);
+            label3.Size = new Size(97, 15);
             label3.TabIndex = 9;
             label3.Text = "Generated image and encryption key";
             // 
             // label1
             // 
             label1.AutoSize = true;
-            label1.Location = new Point(24, 24);
+            label1.Location = new Point(24, 38);
             label1.Name = "label1";
             label1.Size = new Size(110, 15);
             label1.TabIndex = 7;
@@ -268,9 +289,9 @@ namespace SteganoTool
             // 
             // outputKey
             // 
-            outputKey.Location = new Point(940, 407);
+            outputKey.Location = new Point(940, 425);
             outputKey.Name = "outputKey";
-            outputKey.Size = new Size(168, 23);
+            outputKey.Size = new Size(244, 23);
             outputKey.TabIndex = 4;
             // 
             // outputImage
@@ -315,7 +336,7 @@ namespace SteganoTool
             // label6
             // 
             label6.AutoSize = true;
-            label6.Location = new Point(940, 24);
+            label6.Location = new Point(940, 38);
             label6.Name = "label6";
             label6.Size = new Size(110, 15);
             label6.TabIndex = 9;
@@ -333,7 +354,7 @@ namespace SteganoTool
             // label4
             // 
             label4.AutoSize = true;
-            label4.Location = new Point(24, 24);
+            label4.Location = new Point(24, 38);
             label4.Name = "label4";
             label4.Size = new Size(97, 15);
             label4.TabIndex = 7;
@@ -462,5 +483,7 @@ namespace SteganoTool
         private RadioButton noCircle;
         private ComboBox fBox;
         private Label label11;
+        private Label label12;
+        private Label label13;
     }
 }
