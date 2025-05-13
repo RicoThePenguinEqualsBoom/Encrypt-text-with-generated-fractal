@@ -66,7 +66,7 @@ namespace SteganoTool
             double imagNorm = imagBits / (double)ulong.MaxValue;
 
             double angle = realNorm * 2 * Math.PI;
-            double radius = 0.75 + imagNorm * 0.25;
+            double radius = 0.01 + imagNorm * 2.09;
             double real = Math.Cos(angle) * radius;
             double imag = Math.Sin(angle) * radius;
 
