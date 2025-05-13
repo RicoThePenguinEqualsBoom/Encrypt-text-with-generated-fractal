@@ -22,13 +22,13 @@ namespace SteganoTool
         private readonly OpenFileDialog ofd = new()
         {
             Filter = "Image files (*.png)|*.png",
-            Title = "Veuiller choisir une image au format spécifier"
+            Title = "Veuiller choisir une image au format spÃ©cifier"
         };
 
         private readonly SaveFileDialog sfd = new()
         {
             Filter = "Image files (*.png)|*.png",
-            Title = "Choisir où sauvegarder votre image",
+            Title = "Choisir oÃ¹ sauvegarder votre image",
             DefaultExt = "png",
             FileName = "output.png"
         };
@@ -39,6 +39,8 @@ namespace SteganoTool
         private string DText;
         private string key;
         private string DiOrCo = "D";
+        private string gboxText;
+        private string fboxText;
 
         private Bitmap EBmp;
         private Bitmap DBmp;
@@ -106,6 +108,8 @@ namespace SteganoTool
                 EText = inputText.Text;
                 height = int.Parse(ImageH.Text);
                 width = int.Parse(ImageW.Text);
+                gboxText = gBox.Text;
+                fboxText = fBox.Text;
 
                 (EKey, EIv) = ProcessKey.Generate();
 
@@ -113,15 +117,15 @@ namespace SteganoTool
 
                 keyC = ProcessKey.GenerateFractalModifier(encrypted);
 
-                while (ProcessFractal.CheckIterations(keyC, width, height, EscapeRadius) == false)
+                while (ProcessFractal.CheckIterations(keyC, width, height, EscapeRadius, fboxText) == false)
                 {
-                    MessageBox.Show("La clé est incorrecte ou l'image ne contient pas de message caché.");
+                    MessageBox.Show("La clÃ© est incorrecte ou l'image ne contient pas de message cachÃ©.");
                     (EKey, EIv) = ProcessKey.Generate();
                     encrypted = ProcessKey.EncryptWithAes(Encoding.UTF8.GetBytes(EText), EKey, EIv);
                     keyC = ProcessKey.GenerateFractalModifier(encrypted);
                 }
 
-                Bitmap bmp = ProcessFractal.GenerateFractal(keyC, width, height, EscapeRadius, gBox.Text, fBox.Text, DiOrCo);
+                Bitmap bmp = ProcessFractal.GenerateFractal(keyC, width, height, EscapeRadius, gboxText, fboxText, DiOrCo);
 
                 EBmp = ProcessFractal.EmbedLSB(bmp, encrypted);
 
@@ -148,9 +152,9 @@ namespace SteganoTool
 
                 DText = Encoding.UTF8.GetString(ProcessKey.DecryptWithAes(decrypted, DKey, DIv));
 
-                if (DKey == null || DIv == null || DReal == 0 || DImag == 0 || decrypted == null || DText == null)
+                if (DKey == null || DIv == null || DReal == 0 || DImag == 0 || decrypted == null || string.IsNullOrWhiteSpace(DText) || string.IsNullOrEmpty(DText))
                 {
-                    MessageBox.Show("La clé est incorrecte ou l'image ne contient pas de message caché.");
+                    Application.Exit();
                     return;
                 }
 
@@ -198,14 +202,6 @@ namespace SteganoTool
             ImageH.Text = height.ToString();
         }
 
-        private void tabControl1_SelectedIndexChanged(object sender, EventArgs e)
-        {
-            if (tabControl1.SelectedTab == tabControl1.TabPages[1])
-            {
-                MessageBox.Show("Warning!!! Wrong input of decryption parameters will result in BSOD");
-            }
-        }
-
         private void Circle_CheckedChanged(object sender, EventArgs e)
         {
             if (Circle.Checked == true)
@@ -233,6 +229,23 @@ namespace SteganoTool
             else
             {
                 gBox.Items.Remove("RGB");
+            }
+        }
+
+        private void gBox_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            if (key != null)
+            {
+                height = int.Parse(ImageH.Text)
+                width = int.Parse(ImageW.Text);
+                gboxText = gBox.Text;
+                fboxText = fBox.Text;
+
+                Bitmap bmp = ProcessFractal.GenerateFractal(keyC, width, height, EscapeRadius, gboxText, fboxText, DiOrCo);
+
+                EBmp = ProcessFractal.EmbedLSB(bmp, encrypted);
+
+                outputImage.Image = EBmp;
             }
         }
     }
