@@ -234,7 +234,7 @@ namespace SteganoTool
                     {
                         if (double.IsNaN(zx2) || double.IsNaN(zy2) || double.IsInfinity(zx2) || double.IsInfinity(zy2))
                             return;
-                        (zx2, zy2) = func(zx2, zy2, cReal, cImag);
+                        (zx2, zy2) = GPU.JuliaFunc(zx2, zy2, cReal, cImag);
                         ++iteration;
                     }
 
